@@ -1,0 +1,24 @@
+{
+  "name": "tapir",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm --workspace @tapir/desktop run dev",
+    "build": "npm run build --workspaces",
+    "rebuild:native:electron": "npm --workspace @tapir/desktop run rebuild:native",
+    "rebuild:native:node": "npm rebuild better-sqlite3",
+    "pretest": "npm run rebuild:native:node",
+    "test": "npm run test --workspaces --if-present",
+    "posttest": "npm run rebuild:native:electron",
+    "typecheck": "npm run typecheck --workspaces"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.9"
+  }
+}

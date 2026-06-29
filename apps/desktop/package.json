@@ -1,0 +1,29 @@
+{
+  "name": "@tapir/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "vue-tsc --noEmit && electron-vite build",
+    "rebuild:native": "electron-rebuild -w better-sqlite3",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@tapir/core": "0.1.0",
+    "@tapir/openapi": "0.1.0",
+    "@tapir/storage": "0.1.0",
+    "@vitejs/plugin-vue": "^5.1.2",
+    "electron": "^31.3.1",
+    "electron-vite": "^2.3.0",
+    "lucide-vue-next": "^0.468.0",
+    "vue": "^3.4.34"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
+    "typescript": "^5.5.4",
+    "vite": "^5.3.5",
+    "vue-tsc": "^2.0.29"
+  }
+}
