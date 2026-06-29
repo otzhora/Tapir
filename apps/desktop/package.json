@@ -7,23 +7,23 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "vue-tsc --noEmit && electron-vite build",
-    "rebuild:native": "electron-rebuild -w better-sqlite3",
+    "rebuild:native": "node scripts/rebuild-native.mjs",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
     "@tapir/core": "0.1.0",
     "@tapir/openapi": "0.1.0",
     "@tapir/storage": "0.1.0",
-    "@vitejs/plugin-vue": "^5.1.2",
-    "electron": "^31.3.1",
-    "electron-vite": "^2.3.0",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "electron": "^42.5.0",
+    "electron-vite": "^5.0.0",
     "lucide-vue-next": "^0.468.0",
     "vue": "^3.4.34"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.2",
+    "@electron/rebuild": "^4.0.6",
     "typescript": "^5.5.4",
-    "vite": "^5.3.5",
+    "vite": "^8.1.0",
     "vue-tsc": "^2.0.29"
   }
 }

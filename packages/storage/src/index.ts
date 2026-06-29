@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { runMigrations } from "./migrations";
+import { runMigrations } from "./migrations.js";
 import type {
   ApiDefinition,
   ApiDefinitionRepository,
