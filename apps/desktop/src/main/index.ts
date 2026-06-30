@@ -10,6 +10,8 @@ import { TapirApplicationService } from "@tapir/core";
 import { BasicOpenApiNormalizer, FetchOpenApiDiscoveryService } from "@tapir/openapi";
 import { createLocalTapirStorage } from "@tapir/storage";
 import { FetchHttpExecutor } from "./fetchHttpExecutor";
+import { toIpcPayload } from "./ipcSerialization";
+import { SafeStorageAuthProfileRepository } from "./safeStorageAuthProfileRepository";
 
 const discovery = new FetchOpenApiDiscoveryService();
 const normalizer = new BasicOpenApiNormalizer();
@@ -22,6 +24,7 @@ async function createServices() {
   const storage = await createLocalTapirStorage(join(dataDir, "tapir.sqlite"));
   return new TapirApplicationService({
     ...storage,
+    authProfiles: new SafeStorageAuthProfileRepository(storage.authProfiles),
     discovery,
     normalizer,
     http: new FetchHttpExecutor()
@@ -69,6 +72,7 @@ function registerIpc(): void {
   handle("tapir:getInitialState", async () => tapir.getInitialState());
   handle("tapir:addServer", async (input) => tapir.addServer(input));
   handle("tapir:saveApiKeyHeader", async (input) => tapir.saveApiKeyHeader(input));
+  handle("tapir:previewOperation", async (input) => tapir.previewOperation(input));
   handle("tapir:callOperation", async (input) => tapir.callOperation(input));
   handle("tapir:listHistory", async (serverId) => tapir.listHistory(serverId));
 }
@@ -77,5 +81,8 @@ function handle<Channel extends TapirIpcChannel>(
   channel: Channel,
   handler: (request: TapirIpcRequest<Channel>) => Promise<TapirIpcResponse<Channel>>
 ): void {
-  ipcMain.handle(channel, (_event, request: TapirIpcRequest<Channel>) => handler(request));
+  ipcMain.handle(channel, async (_event, request: TapirIpcRequest<Channel>) => {
+    const response = await handler(request);
+    return toIpcPayload(response);
+  });
 }

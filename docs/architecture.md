@@ -29,7 +29,7 @@ The renderer talks to the main process through a narrow preload bridge. It does 
 
 SQLite stores local workspace data. API key header auth is represented as a `UserAuthProfile` plus a separate `SecretValue`, so secrets are not embedded into server records or examples.
 
-For the MVP, `SecretValue.encryptedOrPlainValue` stores plaintext locally. This is a deliberate temporary compromise. Before broader use, desktop storage should move to OS-backed secure storage or encrypted values while preserving the same repository interface.
+For the desktop app, `SecretValue.encryptedOrPlainValue` is protected with Electron `safeStorage` when OS-backed encryption is available. If the host cannot provide encryption, the value falls back to plaintext while preserving the same repository interface.
 
 ## OpenAPI Normalization
 

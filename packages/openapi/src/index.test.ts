@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BasicOpenApiNormalizer } from "./index";
+import { BasicOpenApiNormalizer } from "./index.js";
 
 describe("BasicOpenApiNormalizer", () => {
   it("extracts callable operations with path-level and operation-level parameters", () => {
@@ -36,7 +36,10 @@ describe("BasicOpenApiNormalizer", () => {
           method: "GET",
           path: "/tenants/{tenantId}/invoices",
           summary: "List invoices",
-          tags: ["Invoices"]
+          tags: ["Invoices"],
+          requestBodyMediaTypes: [],
+          securityRequirements: [],
+          securitySchemes: []
         }
       ]
     });
@@ -51,5 +54,56 @@ describe("BasicOpenApiNormalizer", () => {
     const normalizer = new BasicOpenApiNormalizer();
 
     expect(() => normalizer.normalize({ openapi: "3.0.3", info: {} })).toThrow("missing paths");
+  });
+
+  it("resolves local refs and extracts body media types, servers, and security schemes", () => {
+    const normalizer = new BasicOpenApiNormalizer();
+
+    const normalized = normalizer.normalize({
+      openapi: "3.0.3",
+      info: { title: "Pets API", version: "1.0.0" },
+      servers: [{ url: "https://api.example.test/v1" }],
+      security: [{ ApiKeyAuth: [] }],
+      components: {
+        securitySchemes: {
+          ApiKeyAuth: { type: "apiKey", name: "x-api-key", in: "header" }
+        },
+        parameters: {
+          PetId: { name: "petId", in: "path", required: true, schema: { type: "string" } }
+        },
+        schemas: {
+          PetInput: { type: "object", properties: { name: { type: "string" } } }
+        }
+      },
+      paths: {
+        "/pets/{petId}": {
+          post: {
+            operationId: "updatePet",
+            parameters: [{ $ref: "#/components/parameters/PetId" }],
+            requestBody: {
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/PetInput" }
+                }
+              }
+            },
+            responses: { "200": { description: "OK" } }
+          }
+        }
+      }
+    });
+
+    expect(normalized.servers).toEqual(["https://api.example.test/v1"]);
+    expect(normalized.operations[0]).toMatchObject({
+      operationId: "updatePet",
+      requestBodyMediaTypes: [
+        {
+          mediaType: "application/json",
+          schema: { type: "object", properties: { name: { type: "string" } } }
+        }
+      ],
+      securityRequirements: [{ ApiKeyAuth: [] }],
+      securitySchemes: [{ key: "ApiKeyAuth", type: "apiKey", name: "x-api-key", in: "header" }]
+    });
   });
 });

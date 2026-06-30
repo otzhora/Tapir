@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
-import { KeyRound, Plus, RefreshCw, Send, Server, TerminalSquare } from "lucide-vue-next";
-import type { CallHistoryEntry, CallOperationResponse, NormalizedOperation, ServerWithDefinition, Workspace } from "@tapir/core";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { AlertCircle, Clipboard, KeyRound, Plus, RefreshCw, RotateCcw, Send, Server, TerminalSquare } from "lucide-vue-next";
+import type { CallHistoryEntry, CallOperationResponse, NormalizedOperation, PreparedOperationRequest, ServerWithDefinition, Workspace } from "@tapir/core";
+import { parseHeaders, parseRequestSnapshot, restoreRequestInputs as restoreInputsFromHistory } from "./historyRestore";
+import { plainOperation } from "./ipcPayloads";
+import { buildCurlCommand, formatJsonBody, formatRequestPreview } from "./requestFormatting";
 import { bridgeUnavailableMessage, getTapirBridge as getAvailableTapirBridge } from "./tapirBridge";
 
 const workspace = ref<Workspace | null>(null);
@@ -11,12 +14,15 @@ const selectedOperationId = ref<string | null>(null);
 const baseUrl = ref("");
 const isAddingServer = ref(false);
 const isSending = ref(false);
+const isPreviewing = ref(false);
 const errorMessage = ref("");
 const responseView = ref<CallOperationResponse | null>(null);
+const requestPreview = ref<PreparedOperationRequest | null>(null);
 const history = ref<CallHistoryEntry[]>([]);
 
 const parameterValues = reactive<Record<string, string>>({});
 const bodyValue = ref("");
+const contentType = ref("application/json");
 const authHeaderName = ref("x-api-key");
 const authSecret = ref("");
 const panelClass = "min-w-0 overflow-auto border-r border-[#cad4cb] bg-[#fafcf7]/90 p-[18px]";
@@ -30,6 +36,10 @@ const activeItemClass = "border-[#9db0a4] bg-[#e9eee7]";
 const selectedServer = computed(() => servers.value.find((item) => item.server.id === selectedServerId.value) ?? null);
 const operations = computed(() => selectedServer.value?.definition?.operations ?? []);
 const selectedOperation = computed(() => operations.value.find((operation) => operation.operationId === selectedOperationId.value) ?? null);
+const selectedContentTypes = computed(() => (selectedOperation.value?.requestBodyMediaTypes ?? []).map((item) => item.mediaType));
+const apiKeyHeaderScheme = computed(() => (selectedOperation.value?.securitySchemes ?? []).find((scheme) => scheme.type === "apiKey" && scheme.in === "header") ?? null);
+const validationIssues = computed(() => requestPreview.value?.validationIssues ?? []);
+const canSend = computed(() => selectedOperation.value !== null && !isSending.value && validationIssues.value.length === 0);
 
 const groupedOperations = computed(() => {
   const groups = new Map<string, NormalizedOperation[]>();
@@ -40,14 +50,17 @@ const groupedOperations = computed(() => {
   return Array.from(groups, ([name, items]) => ({ name, items }));
 });
 
+const prettyRequest = computed(() => {
+  return formatRequestPreview(requestPreview.value?.redactedRequest ?? null);
+});
+
 const prettyBody = computed(() => {
   if (!responseView.value) return "";
-  const body = responseView.value.response.body;
-  try {
-    return JSON.stringify(JSON.parse(body), null, 2);
-  } catch {
-    return body;
-  }
+  return formatJsonBody(responseView.value.response.body);
+});
+
+const curlCommand = computed(() => {
+  return buildCurlCommand(requestPreview.value?.redactedRequest ?? null);
 });
 
 onMounted(async () => {
@@ -70,7 +83,18 @@ watch(selectedServerId, async (serverId) => {
 watch(selectedOperation, () => {
   clearParameterValues();
   bodyValue.value = "";
+  contentType.value = selectedContentTypes.value[0] ?? "application/json";
+  authHeaderName.value = apiKeyHeaderScheme.value?.name ?? authHeaderName.value;
+  void refreshPreview();
 });
+
+watch([bodyValue, authHeaderName, authSecret, contentType], () => {
+  void refreshPreview();
+});
+
+watch(parameterValues, () => {
+  void refreshPreview();
+}, { deep: true });
 
 async function loadInitialState(): Promise<void> {
   const tapir = getTapirBridge();
@@ -91,6 +115,7 @@ async function addServer(): Promise<void> {
     servers.value = [{ server: result.server, definition: result.normalized }, ...servers.value];
     selectedServerId.value = result.server.id;
     baseUrl.value = "";
+    errorMessage.value = "";
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error);
   } finally {
@@ -114,9 +139,10 @@ async function callOperation(): Promise<void> {
     }
     responseView.value = await tapir.callOperation({
       serverId: selectedServer.value.server.id,
-      operation: selectedOperation.value,
+      operation: plainOperation(selectedOperation.value),
       values: { ...parameterValues },
       body: bodyValue.value,
+      contentType: contentType.value,
       apiKeyHeaderName: authHeaderName.value,
       apiKeyValue: authSecret.value
     });
@@ -128,14 +154,75 @@ async function callOperation(): Promise<void> {
   }
 }
 
+async function refreshPreview(): Promise<void> {
+  if (!selectedServer.value || !selectedOperation.value) {
+    requestPreview.value = null;
+    return;
+  }
+  const tapir = getTapirBridge();
+  if (!tapir) return;
+  isPreviewing.value = true;
+  try {
+    requestPreview.value = await tapir.previewOperation({
+      serverId: selectedServer.value.server.id,
+      operation: plainOperation(selectedOperation.value),
+      values: { ...parameterValues },
+      body: bodyValue.value,
+      contentType: contentType.value,
+      apiKeyHeaderName: authHeaderName.value,
+      apiKeyValue: authSecret.value
+    });
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    isPreviewing.value = false;
+  }
+}
+
 function selectOperation(operation: NormalizedOperation): void {
   selectedOperationId.value = operation.operationId;
+}
+
+async function restoreHistory(entry: CallHistoryEntry): Promise<void> {
+  if (!entry.operationId) return;
+  const operation = operations.value.find((candidate) => candidate.operationId === entry.operationId);
+  if (!operation) return;
+  selectedOperationId.value = operation.operationId;
+  await nextTick();
+  responseView.value = entry.responseBody && entry.responseStatus
+    ? {
+      request: parseRequestSnapshot(entry.requestSnapshotJson),
+      response: {
+        status: entry.responseStatus,
+        headers: parseHeaders(entry.responseHeadersJson),
+        body: entry.responseBody,
+        durationMs: entry.durationMs ?? 0
+      }
+    }
+    : null;
+  restoreRequestInputs(operation, parseRequestSnapshot(entry.requestSnapshotJson));
 }
 
 function clearParameterValues(): void {
   for (const key of Object.keys(parameterValues)) {
     delete parameterValues[key];
   }
+}
+
+function restoreRequestInputs(operation: NormalizedOperation, request: CallOperationResponse["request"]): void {
+  clearParameterValues();
+  const restored = restoreInputsFromHistory(operation, request, selectedContentTypes.value[0] ?? "application/json");
+  bodyValue.value = restored.bodyValue;
+  contentType.value = restored.contentType;
+  for (const [name, value] of Object.entries(restored.parameterValues)) {
+    parameterValues[name] = value;
+  }
+  void refreshPreview();
+}
+
+async function copyCurl(): Promise<void> {
+  if (!curlCommand.value) return;
+  await navigator.clipboard.writeText(curlCommand.value);
 }
 
 function methodClass(method: string): string {
@@ -235,11 +322,18 @@ function getTapirBridge() {
             </div>
             <p class="mt-2 text-[#61716a]">{{ selectedOperation.summary || selectedOperation.description || selectedOperation.operationId }}</p>
           </div>
-          <button class="inline-flex h-10 min-w-[104px] shrink-0 items-center justify-center gap-2 rounded-md bg-[#0a7a69] px-3.5 font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-60" :disabled="isSending" @click="callOperation">
+          <button class="inline-flex h-10 min-w-[104px] shrink-0 items-center justify-center gap-2 rounded-md bg-[#0a7a69] px-3.5 font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-60" :disabled="!canSend" @click="callOperation">
             <Send :size="17" />
             {{ isSending ? "Sending" : "Send" }}
           </button>
         </header>
+
+        <section v-if="validationIssues.length > 0" class="grid gap-2 rounded-lg border border-[#e0a18f] bg-[#fff2ec] p-3.5 text-[#7d2b21]">
+          <div v-for="issue in validationIssues" :key="`${issue.field}:${issue.message}`" class="flex items-start gap-2 text-[13px] font-bold">
+            <AlertCircle :size="16" class="mt-0.5 shrink-0" />
+            <span>{{ issue.message }}</span>
+          </div>
+        </section>
 
         <div class="grid grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)] gap-3.5">
           <section class="rounded-lg border border-[#cbd6ce] bg-[#fbfcf8] p-3.5">
@@ -264,10 +358,28 @@ function getTapirBridge() {
           </section>
 
           <section v-if="selectedOperation.method !== 'GET'" class="col-span-full rounded-lg border border-[#cbd6ce] bg-[#fbfcf8] p-3.5">
-            <h3 :class="[eyebrowClass, 'mb-3 flex items-center gap-1.5']">Body</h3>
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <h3 :class="[eyebrowClass, 'flex items-center gap-1.5']">Body</h3>
+              <select v-model="contentType" class="h-[34px] min-w-[170px] rounded-md border border-[#b8c5bd] bg-[#fffef8] px-2 text-[13px] font-bold text-[#172321] outline-none">
+                <option v-if="selectedContentTypes.length === 0" value="application/json">application/json</option>
+                <option v-for="type in selectedContentTypes" :key="type" :value="type">{{ type }}</option>
+              </select>
+            </div>
             <textarea v-model="bodyValue" class="min-h-40 w-full min-w-0 resize-y rounded-md border border-[#b8c5bd] bg-[#fffef8] p-3 font-mono text-[13px] text-[#172321] outline-none focus:border-[#0a7a69] focus:shadow-[0_0_0_3px_rgba(10,122,105,0.14)]" spellcheck="false" placeholder="{ }"></textarea>
           </section>
         </div>
+
+        <section class="rounded-lg border border-[#cbd6ce] bg-[#fbfcf8] p-3.5">
+          <div class="mb-2.5 flex items-center justify-between gap-3">
+            <h3 class="m-0 text-[15px] font-bold">Request</h3>
+            <button class="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-[#b8c5bd] bg-[#fffef8] px-2.5 text-[13px] font-extrabold text-[#203633] disabled:cursor-not-allowed disabled:opacity-60" :disabled="!curlCommand" title="Copy cURL" @click="copyCurl">
+              <Clipboard :size="15" />
+              cURL
+            </button>
+          </div>
+          <pre v-if="requestPreview" class="m-0 max-h-[260px] overflow-auto whitespace-pre-wrap rounded-md bg-[#182321] p-3.5 font-mono text-[13px] leading-6 text-[#e8f3ec] [overflow-wrap:anywhere]">{{ prettyRequest }}</pre>
+          <div v-else class="grid min-h-[120px] place-items-center text-center text-[#6f7d77]">{{ isPreviewing ? "Preparing request..." : "Complete the request fields to preview it." }}</div>
+        </section>
 
         <section class="rounded-lg border border-[#cbd6ce] bg-[#fbfcf8] p-3.5">
           <div class="mb-2.5 flex justify-between gap-3">
@@ -291,12 +403,12 @@ function getTapirBridge() {
         <strong>{{ history.length }}</strong>
       </div>
       <div v-if="history.length === 0" class="pt-2 text-[#66736d]">No calls yet.</div>
-      <div v-for="entry in history" :key="entry.id" class="grid grid-cols-[44px_1fr] gap-x-2 gap-y-1 border-b border-[#d7dfd8] py-2.5">
-        <strong class="text-[#0a7a69]">{{ entry.responseStatus ?? "ERR" }}</strong>
+      <button v-for="entry in history" :key="entry.id" class="grid w-full grid-cols-[44px_1fr_auto] gap-x-2 gap-y-1 border-b border-[#d7dfd8] py-2.5 text-left text-inherit hover:bg-[#eef3ec]" title="Restore request" @click="restoreHistory(entry)">
+        <strong :class="entry.responseStatus && entry.responseStatus < 400 ? 'text-[#0a7a69]' : 'text-[#a03225]'">{{ entry.responseStatus ?? "ERR" }}</strong>
         <span class="truncate">{{ entry.operationId ?? "Scratch request" }}</span>
-        <small class="col-start-2 text-[#66736d]">{{ entry.durationMs ?? 0 }} ms</small>
-      </div>
+        <RotateCcw :size="14" class="mt-0.5 text-[#66736d]" />
+        <small class="col-start-2 col-span-2 text-[#66736d]">{{ entry.durationMs ?? 0 }} ms · {{ new Date(entry.createdAt).toLocaleString() }}</small>
+      </button>
     </aside>
   </main>
 </template>
-

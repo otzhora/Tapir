@@ -18,6 +18,7 @@ const api = {
   getInitialState: () => invoke("tapir:getInitialState", undefined),
   addServer: (baseUrl: string) => invoke("tapir:addServer", { baseUrl }),
   saveApiKeyHeader: (input: SaveApiKeyHeaderRequest) => invoke("tapir:saveApiKeyHeader", input),
+  previewOperation: (input: CallOperationRequest) => invoke("tapir:previewOperation", input),
   callOperation: (input: CallOperationRequest) => invoke("tapir:callOperation", input),
   listHistory: (serverId: string) => invoke("tapir:listHistory", serverId)
 };

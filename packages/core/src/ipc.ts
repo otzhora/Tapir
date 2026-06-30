@@ -1,9 +1,8 @@
 import type {
-  ApiDefinition,
-  ApiDefinitionSource,
   CallHistoryEntry,
   NormalizedApiDefinition,
   NormalizedOperation,
+  PreparedOperationRequest,
   ServerInstance,
   UserAuthProfile,
   Workspace
@@ -25,8 +24,6 @@ export interface AddServerRequest {
 
 export interface AddServerResponse {
   server: ServerInstance;
-  source: ApiDefinitionSource;
-  definition: ApiDefinition;
   normalized: NormalizedApiDefinition;
 }
 
@@ -41,6 +38,7 @@ export interface CallOperationRequest {
   operation: NormalizedOperation;
   values: Record<string, string>;
   body?: string;
+  contentType?: string;
   apiKeyHeaderName?: string;
   apiKeyValue?: string;
 }
@@ -60,6 +58,10 @@ export interface CallOperationResponse {
   };
 }
 
+export interface PreviewOperationRequest extends CallOperationRequest {}
+
+export interface PreviewOperationResponse extends PreparedOperationRequest {}
+
 export interface TapirIpcContract {
   "tapir:getInitialState": {
     request: void;
@@ -76,6 +78,10 @@ export interface TapirIpcContract {
   "tapir:callOperation": {
     request: CallOperationRequest;
     response: CallOperationResponse;
+  };
+  "tapir:previewOperation": {
+    request: PreviewOperationRequest;
+    response: PreviewOperationResponse;
   };
   "tapir:listHistory": {
     request: string;

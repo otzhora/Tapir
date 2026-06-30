@@ -37,6 +37,21 @@ export interface NormalizedParameter {
   schema?: unknown;
 }
 
+export interface NormalizedRequestBodyMediaType {
+  mediaType: string;
+  schema?: unknown;
+}
+
+export interface NormalizedSecurityScheme {
+  key: string;
+  type: string;
+  name?: string;
+  in?: "query" | "header" | "cookie";
+  scheme?: string;
+  bearerFormat?: string;
+  description?: string;
+}
+
 export interface NormalizedOperation {
   operationId: string;
   method: HttpMethod;
@@ -46,13 +61,16 @@ export interface NormalizedOperation {
   tags: string[];
   parameters: NormalizedParameter[];
   requestBodySchema?: unknown;
+  requestBodyMediaTypes: NormalizedRequestBodyMediaType[];
   responses?: unknown;
-  securityRequirements?: unknown;
+  securityRequirements: Array<Record<string, string[]>>;
+  securitySchemes: NormalizedSecurityScheme[];
 }
 
 export interface NormalizedApiDefinition {
   name: string;
   version: string;
+  servers: string[];
   operations: NormalizedOperation[];
 }
 
@@ -91,6 +109,17 @@ export interface PreparedRequest {
   url: string;
   headers: Record<string, string>;
   body?: string;
+}
+
+export interface PreparedRequestValidationIssue {
+  field: string;
+  message: string;
+}
+
+export interface PreparedOperationRequest {
+  request: PreparedRequest;
+  redactedRequest: PreparedRequest;
+  validationIssues: PreparedRequestValidationIssue[];
 }
 
 export interface HttpResponseSnapshot {
@@ -159,5 +188,7 @@ export interface OpenApiNormalizer {
   normalize(document: unknown): NormalizedApiDefinition;
 }
 
-export * from "./ipc";
-export * from "./application";
+export * from "./ipc.js";
+export * from "./application.js";
+export * from "./requestPreparation.js";
+export * from "./urlNormalization.js";
