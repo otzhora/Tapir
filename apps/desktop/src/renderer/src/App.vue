@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { KeyRound, Plus, RefreshCw, Send, Server, TerminalSquare } from "lucide-vue-next";
 import type { CallHistoryEntry, CallOperationResponse, NormalizedOperation, ServerWithDefinition, Workspace } from "@tapir/core";
+import { bridgeUnavailableMessage, getTapirBridge as getAvailableTapirBridge } from "./tapirBridge";
 
 const workspace = ref<Workspace | null>(null);
 const servers = ref<ServerWithDefinition[]>([]);
@@ -50,7 +51,13 @@ watch(selectedServerId, async (serverId) => {
   selectedOperationId.value = operations.value[0]?.operationId ?? null;
   responseView.value = null;
   clearParameterValues();
-  history.value = serverId ? await window.tapir.listHistory(serverId) : [];
+  if (!serverId) {
+    history.value = [];
+    return;
+  }
+  const tapir = getTapirBridge();
+  if (!tapir) return;
+  history.value = await tapir.listHistory(serverId);
 });
 
 watch(selectedOperation, () => {
@@ -59,7 +66,9 @@ watch(selectedOperation, () => {
 });
 
 async function loadInitialState(): Promise<void> {
-  const state = await window.tapir.getInitialState();
+  const tapir = getTapirBridge();
+  if (!tapir) return;
+  const state = await tapir.getInitialState();
   workspace.value = state.workspace;
   servers.value = state.servers;
   selectedServerId.value = servers.value[0]?.server.id ?? null;
@@ -67,9 +76,11 @@ async function loadInitialState(): Promise<void> {
 
 async function addServer(): Promise<void> {
   errorMessage.value = "";
+  const tapir = getTapirBridge();
+  if (!tapir) return;
   isAddingServer.value = true;
   try {
-    const result = await window.tapir.addServer(baseUrl.value);
+    const result = await tapir.addServer(baseUrl.value);
     servers.value = [{ server: result.server, definition: result.normalized }, ...servers.value];
     selectedServerId.value = result.server.id;
     baseUrl.value = "";
@@ -83,16 +94,18 @@ async function addServer(): Promise<void> {
 async function callOperation(): Promise<void> {
   if (!selectedServer.value || !selectedOperation.value) return;
   errorMessage.value = "";
+  const tapir = getTapirBridge();
+  if (!tapir) return;
   isSending.value = true;
   try {
     if (authSecret.value.trim()) {
-      await window.tapir.saveApiKeyHeader({
+      await tapir.saveApiKeyHeader({
         serverId: selectedServer.value.server.id,
         headerName: authHeaderName.value,
         secretValue: authSecret.value
       });
     }
-    responseView.value = await window.tapir.callOperation({
+    responseView.value = await tapir.callOperation({
       serverId: selectedServer.value.server.id,
       operation: selectedOperation.value,
       values: { ...parameterValues },
@@ -100,7 +113,7 @@ async function callOperation(): Promise<void> {
       apiKeyHeaderName: authHeaderName.value,
       apiKeyValue: authSecret.value
     });
-    history.value = await window.tapir.listHistory(selectedServer.value.server.id);
+    history.value = await tapir.listHistory(selectedServer.value.server.id);
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : String(error);
   } finally {
@@ -116,6 +129,12 @@ function clearParameterValues(): void {
   for (const key of Object.keys(parameterValues)) {
     delete parameterValues[key];
   }
+}
+
+function getTapirBridge() {
+  const tapir = getAvailableTapirBridge();
+  if (!tapir) errorMessage.value = bridgeUnavailableMessage;
+  return tapir;
 }
 </script>
 

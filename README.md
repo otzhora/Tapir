@@ -18,3 +18,18 @@ npm run dev
 ```
 
 The desktop app is an Electron host around a Vue web app core. Local state is stored in SQLite through repository interfaces so later hosted implementations can replace those adapters.
+
+To run Tapir with both local test APIs:
+
+```bash
+npm run dev:with-test-projects
+```
+
+## Test APIs
+
+Two small Swagger-backed API fixtures live under `test-projects/` for testing Tapir discovery and request execution:
+
+- `test-projects/node-swagger-api`: dependency-free Node server on `http://localhost:5051`
+- `test-projects/dotnet-swagger-api`: ASP.NET Core server on `http://localhost:5052`
+
+Each fixture has its own README with run commands and useful Swagger/OpenAPI URLs.

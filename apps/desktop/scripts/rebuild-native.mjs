@@ -7,10 +7,11 @@ const require = createRequire(import.meta.url);
 const electronVersion = require("electron/package.json").version;
 const desktopDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const projectRoot = resolve(desktopDir, "../..");
+const storageDir = resolve(projectRoot, "packages/storage");
 
 await rebuild({
-  buildPath: projectRoot,
+  buildPath: storageDir,
   electronVersion,
   onlyModules: ["better-sqlite3"],
-  projectRootPath: projectRoot
+  projectRootPath: storageDir
 });

@@ -8,7 +8,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm --workspace @tapir/desktop run dev",
+    "dev": "node scripts/dev.mjs",
+    "dev:desktop": "npm --workspace @tapir/desktop run dev",
+    "dev:with-test-projects": "node scripts/dev-with-test-projects.mjs",
     "build": "npm run build --workspaces",
     "rebuild:native:electron": "npm --workspace @tapir/desktop run rebuild:native",
     "rebuild:native:node": "npm rebuild better-sqlite3",
@@ -20,5 +22,9 @@
   "devDependencies": {
     "typescript": "^5.5.4",
     "vitest": "^3.2.6"
+  },
+  "allowScripts": {
+    "electron@42.5.0": true,
+    "better-sqlite3@12.11.1": true
   }
 }

@@ -4,6 +4,8 @@ packages/*/node_modules/
 **/.vite/
 out/
 dist/
+bin/
+obj/
 *.tsbuildinfo
 *.sqlite
 *.sqlite-shm
