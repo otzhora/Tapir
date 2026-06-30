@@ -1,18 +1,12 @@
-import type { HttpMethod, NormalizedApiDefinition, NormalizedOperation, NormalizedParameter } from "@tapir/core";
-
-export interface DiscoveryResult {
-  specUrl: string;
-  discoveryMethod: string;
-  document: unknown;
-}
-
-export interface OpenApiDiscoveryService {
-  discover(baseUrl: string): Promise<DiscoveryResult>;
-}
-
-export interface OpenApiNormalizer {
-  normalize(document: unknown): NormalizedApiDefinition;
-}
+import type {
+  DiscoveryResult,
+  HttpMethod,
+  NormalizedApiDefinition,
+  NormalizedOperation,
+  NormalizedParameter,
+  OpenApiDiscoveryService,
+  OpenApiNormalizer
+} from "@tapir/core";
 
 const discoveryPaths = [
   "/openapi.json",

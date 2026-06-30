@@ -16,12 +16,34 @@ import type {
 
 export type SqliteDatabase = Database.Database;
 
+export interface LocalTapirStorage {
+  db: SqliteDatabase;
+  workspace: Workspace;
+  servers: ServerRepository;
+  definitions: ApiDefinitionRepository;
+  authProfiles: AuthProfileRepository;
+  history: HistoryRepository;
+}
+
 export async function openTapirDatabase(filePath: string): Promise<SqliteDatabase> {
   const db = new Database(filePath);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   await runMigrations(db);
   return db;
+}
+
+export async function createLocalTapirStorage(filePath: string): Promise<LocalTapirStorage> {
+  const db = await openTapirDatabase(filePath);
+  const workspace = ensureDefaultWorkspace(db);
+  return {
+    db,
+    workspace,
+    servers: new SqliteServerRepository(db),
+    definitions: new SqliteApiDefinitionRepository(db),
+    authProfiles: new SqliteAuthProfileRepository(db),
+    history: new SqliteHistoryRepository(db)
+  };
 }
 
 export function ensureDefaultWorkspace(db: SqliteDatabase): Workspace {

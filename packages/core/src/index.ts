@@ -145,4 +145,19 @@ export interface HttpExecutor {
   execute(request: PreparedRequest): Promise<HttpResponseSnapshot>;
 }
 
+export interface DiscoveryResult {
+  specUrl: string;
+  discoveryMethod: string;
+  document: unknown;
+}
+
+export interface OpenApiDiscoveryService {
+  discover(baseUrl: string): Promise<DiscoveryResult>;
+}
+
+export interface OpenApiNormalizer {
+  normalize(document: unknown): NormalizedApiDefinition;
+}
+
 export * from "./ipc";
+export * from "./application";
