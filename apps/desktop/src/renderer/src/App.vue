@@ -19,6 +19,13 @@ const parameterValues = reactive<Record<string, string>>({});
 const bodyValue = ref("");
 const authHeaderName = ref("x-api-key");
 const authSecret = ref("");
+const panelClass = "min-w-0 overflow-auto border-r border-[#cad4cb] bg-[#fafcf7]/90 p-[18px]";
+const fieldClass =
+  "h-[38px] w-full min-w-0 rounded-md border border-[#b8c5bd] bg-[#fffef8] px-2.5 text-[#172321] outline-none focus:border-[#0a7a69] focus:shadow-[0_0_0_3px_rgba(10,122,105,0.14)]";
+const eyebrowClass = "text-xs font-extrabold uppercase text-[#35433f]";
+const itemClass =
+  "grid w-full min-w-0 grid-cols-[auto_1fr] gap-2.5 rounded-[7px] border border-transparent p-2.5 text-left text-inherit hover:bg-[#eef3ec]";
+const activeItemClass = "border-[#9db0a4] bg-[#e9eee7]";
 
 const selectedServer = computed(() => servers.value.find((item) => item.server.id === selectedServerId.value) ?? null);
 const operations = computed(() => selectedServer.value?.definition?.operations ?? []);
@@ -131,6 +138,16 @@ function clearParameterValues(): void {
   }
 }
 
+function methodClass(method: string): string {
+  const base = "inline-grid h-6 w-[58px] place-items-center rounded bg-[#dfe7df] text-[11px] font-black text-[#26413d]";
+  const variants: Record<string, string> = {
+    GET: "bg-[#d9f2ef] text-[#006f63]",
+    POST: "bg-[#e8efcd] text-[#607100]",
+    DELETE: "bg-[#ffe1d9] text-[#a03225]"
+  };
+  return `${base} ${variants[method] ?? ""}`;
+}
+
 function getTapirBridge() {
   const tapir = getAvailableTapirBridge();
   if (!tapir) errorMessage.value = bridgeUnavailableMessage;
@@ -139,148 +156,147 @@ function getTapirBridge() {
 </script>
 
 <template>
-  <main class="shell">
-    <aside class="servers-panel">
-      <div class="brand-row">
-        <div class="brand-mark">T</div>
+  <main class="grid min-h-screen grid-cols-[280px_minmax(250px,330px)_minmax(460px,1fr)_230px] max-[1150px]:grid-cols-[260px_280px_minmax(420px,1fr)]">
+    <aside :class="panelClass">
+      <div class="mb-7 flex items-center gap-3">
+        <div class="grid size-9 place-items-center border-2 border-[#203633] bg-[#d7fb56] font-black text-[#203633]">T</div>
         <div>
-          <h1>Tapir</h1>
-          <p>{{ workspace?.name ?? "Local Workspace" }}</p>
+          <h1 class="m-0 text-[22px] font-bold">Tapir</h1>
+          <p class="m-0 text-[#66736d]">{{ workspace?.name ?? "Local Workspace" }}</p>
         </div>
       </div>
 
-      <form class="add-server" @submit.prevent="addServer">
-        <label for="base-url">Add Server</label>
-        <div class="url-row">
-          <input id="base-url" v-model="baseUrl" placeholder="https://api.example.com" required />
-          <button type="submit" :disabled="isAddingServer || !baseUrl.trim()" title="Discover spec">
-            <RefreshCw v-if="isAddingServer" :size="17" class="spin" />
+      <form class="mb-3.5 grid gap-2" @submit.prevent="addServer">
+        <label for="base-url" :class="eyebrowClass">Add Server</label>
+        <div class="grid grid-cols-[1fr_40px] gap-2">
+          <input id="base-url" v-model="baseUrl" :class="fieldClass" placeholder="https://api.example.com" required />
+          <button class="inline-flex items-center justify-center gap-2 rounded-md bg-[#203633] font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-60" type="submit" :disabled="isAddingServer || !baseUrl.trim()" title="Discover spec">
+            <RefreshCw v-if="isAddingServer" :size="17" class="animate-spin" />
             <Plus v-else :size="18" />
           </button>
         </div>
       </form>
 
-      <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
+      <p v-if="errorMessage" class="my-2.5 border-l-[3px] border-[#bc3d2c] bg-[#fff0eb] p-2.5 text-[13px] text-[#8f2f22]">{{ errorMessage }}</p>
 
-      <div class="server-list">
+      <div class="grid gap-2.5">
         <button
           v-for="item in servers"
           :key="item.server.id"
-          class="server-item"
-          :class="{ active: item.server.id === selectedServerId }"
+          :class="[itemClass, item.server.id === selectedServerId && activeItemClass]"
           @click="selectedServerId = item.server.id"
         >
           <Server :size="17" />
-          <span>
-            <strong>{{ item.server.name }}</strong>
-            <small>{{ item.server.baseUrl }}</small>
+          <span class="grid min-w-0 gap-[3px]">
+            <strong class="truncate">{{ item.server.name }}</strong>
+            <small class="truncate text-[#66736d]">{{ item.server.baseUrl }}</small>
           </span>
         </button>
       </div>
     </aside>
 
-    <section class="operations-panel">
-      <div class="panel-title">
+    <section :class="panelClass">
+      <div :class="[eyebrowClass, 'mb-3.5 flex justify-between']">
         <span>Operations</span>
         <strong>{{ operations.length }}</strong>
       </div>
 
-      <div v-if="!selectedServer" class="empty">
+      <div v-if="!selectedServer" class="grid min-h-[220px] place-items-center gap-2.5 text-center text-[#6f7d77]">
         <TerminalSquare :size="30" />
-        <p>Add a deployed API server to discover its OpenAPI surface.</p>
+        <p class="m-0">Add a deployed API server to discover its OpenAPI surface.</p>
       </div>
 
       <template v-else>
-        <div v-for="group in groupedOperations" :key="group.name" class="operation-group">
-          <h2>{{ group.name }}</h2>
+        <div v-for="group in groupedOperations" :key="group.name" class="grid gap-2.5">
+          <h2 class="mb-0.5 mt-4 text-xs font-bold uppercase text-[#57645f]">{{ group.name }}</h2>
           <button
             v-for="operation in group.items"
             :key="operation.operationId"
-            class="operation-item"
-            :class="{ active: operation.operationId === selectedOperationId }"
+            :class="[itemClass, operation.operationId === selectedOperationId && activeItemClass]"
             @click="selectOperation(operation)"
           >
-            <span class="method" :data-method="operation.method">{{ operation.method }}</span>
-            <span>
-              <strong>{{ operation.summary || operation.operationId }}</strong>
-              <small>{{ operation.path }}</small>
+            <span :class="methodClass(operation.method)">{{ operation.method }}</span>
+            <span class="grid min-w-0 gap-[3px]">
+              <strong class="truncate">{{ operation.summary || operation.operationId }}</strong>
+              <small class="truncate text-[#66736d]">{{ operation.path }}</small>
             </span>
           </button>
         </div>
       </template>
     </section>
 
-    <section class="request-panel">
-      <div v-if="selectedOperation && selectedServer" class="request-layout">
-        <header class="request-header">
-          <div>
-            <div class="route-line">
-              <span class="method" :data-method="selectedOperation.method">{{ selectedOperation.method }}</span>
-              <h2>{{ selectedOperation.path }}</h2>
+    <section class="min-w-0 overflow-auto border-r border-[#cad4cb] bg-[#fffffb]/80 p-[22px]">
+      <div v-if="selectedOperation && selectedServer" class="grid gap-2.5">
+        <header class="flex items-start justify-between gap-[18px] border-b border-[#cad4cb] pb-[18px]">
+          <div class="min-w-0">
+            <div class="flex min-w-0 items-center gap-2.5">
+              <span :class="methodClass(selectedOperation.method)">{{ selectedOperation.method }}</span>
+              <h2 class="m-0 text-[22px] font-bold [overflow-wrap:anywhere]">{{ selectedOperation.path }}</h2>
             </div>
-            <p>{{ selectedOperation.summary || selectedOperation.description || selectedOperation.operationId }}</p>
+            <p class="mt-2 text-[#61716a]">{{ selectedOperation.summary || selectedOperation.description || selectedOperation.operationId }}</p>
           </div>
-          <button class="send-button" :disabled="isSending" @click="callOperation">
+          <button class="inline-flex h-10 min-w-[104px] shrink-0 items-center justify-center gap-2 rounded-md bg-[#0a7a69] px-3.5 font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-60" :disabled="isSending" @click="callOperation">
             <Send :size="17" />
             {{ isSending ? "Sending" : "Send" }}
           </button>
         </header>
 
-        <div class="request-grid">
-          <section class="tool-section">
-            <h3>Parameters</h3>
-            <div v-if="selectedOperation.parameters.length === 0" class="quiet">No parameters declared by the spec.</div>
-            <label v-for="parameter in selectedOperation.parameters" :key="`${parameter.in}:${parameter.name}`" class="field-row">
-              <span>{{ parameter.name }} <small>{{ parameter.in }}{{ parameter.required ? " required" : "" }}</small></span>
-              <input v-model="parameterValues[parameter.name]" :placeholder="parameter.description || parameter.name" />
+        <div class="grid grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)] gap-3.5">
+          <section class="rounded-lg border border-[#cbd6ce] bg-[#fbfcf8] p-3.5">
+            <h3 :class="[eyebrowClass, 'mb-3 flex items-center gap-1.5']">Parameters</h3>
+            <div v-if="selectedOperation.parameters.length === 0" class="text-[#66736d]">No parameters declared by the spec.</div>
+            <label v-for="parameter in selectedOperation.parameters" :key="`${parameter.in}:${parameter.name}`" class="mb-3 grid gap-[7px]">
+              <span class="text-[13px] font-bold text-[#31413d]">{{ parameter.name }} <small class="ml-1 font-medium text-[#66736d]">{{ parameter.in }}{{ parameter.required ? " required" : "" }}</small></span>
+              <input v-model="parameterValues[parameter.name]" :class="fieldClass" :placeholder="parameter.description || parameter.name" />
             </label>
           </section>
 
-          <section class="tool-section">
-            <h3><KeyRound :size="16" /> API Key Header</h3>
-            <label class="field-row">
-              <span>Header name</span>
-              <input v-model="authHeaderName" placeholder="x-api-key" />
+          <section class="rounded-lg border border-[#cbd6ce] bg-[#fbfcf8] p-3.5">
+            <h3 :class="[eyebrowClass, 'mb-3 flex items-center gap-1.5']"><KeyRound :size="16" /> API Key Header</h3>
+            <label class="mb-3 grid gap-[7px]">
+              <span class="text-[13px] font-bold text-[#31413d]">Header name</span>
+              <input v-model="authHeaderName" :class="fieldClass" placeholder="x-api-key" />
             </label>
-            <label class="field-row">
-              <span>Secret value</span>
-              <input v-model="authSecret" type="password" placeholder="Stored locally for this server" />
+            <label class="mb-3 grid gap-[7px]">
+              <span class="text-[13px] font-bold text-[#31413d]">Secret value</span>
+              <input v-model="authSecret" :class="fieldClass" type="password" placeholder="Stored locally for this server" />
             </label>
           </section>
 
-          <section v-if="selectedOperation.method !== 'GET'" class="tool-section span-two">
-            <h3>Body</h3>
-            <textarea v-model="bodyValue" spellcheck="false" placeholder="{ }"></textarea>
+          <section v-if="selectedOperation.method !== 'GET'" class="col-span-full rounded-lg border border-[#cbd6ce] bg-[#fbfcf8] p-3.5">
+            <h3 :class="[eyebrowClass, 'mb-3 flex items-center gap-1.5']">Body</h3>
+            <textarea v-model="bodyValue" class="min-h-40 w-full min-w-0 resize-y rounded-md border border-[#b8c5bd] bg-[#fffef8] p-3 font-mono text-[13px] text-[#172321] outline-none focus:border-[#0a7a69] focus:shadow-[0_0_0_3px_rgba(10,122,105,0.14)]" spellcheck="false" placeholder="{ }"></textarea>
           </section>
         </div>
 
-        <section class="response-section">
-          <div class="response-title">
-            <h3>Response</h3>
-            <span v-if="responseView">{{ responseView.response.status }} · {{ responseView.response.durationMs }} ms</span>
+        <section class="rounded-lg border border-[#cbd6ce] bg-[#fbfcf8] p-3.5">
+          <div class="mb-2.5 flex justify-between gap-3">
+            <h3 class="m-0 text-[15px] font-bold">Response</h3>
+            <span v-if="responseView" class="font-extrabold text-[#0a7a69]">{{ responseView.response.status }} · {{ responseView.response.durationMs }} ms</span>
           </div>
-          <pre v-if="responseView">{{ prettyBody }}</pre>
-          <div v-else class="empty-response">Send an operation to see the response body.</div>
+          <pre v-if="responseView" class="m-0 max-h-[390px] overflow-auto whitespace-pre-wrap rounded-md bg-[#182321] p-3.5 font-mono text-[13px] leading-6 text-[#e8f3ec] [overflow-wrap:anywhere]">{{ prettyBody }}</pre>
+          <div v-else class="grid min-h-[220px] place-items-center gap-2.5 text-center text-[#6f7d77]">Send an operation to see the response body.</div>
         </section>
       </div>
 
-      <div v-else class="empty large">
+      <div v-else class="grid min-h-[calc(100vh-44px)] place-items-center gap-2.5 text-center text-[#6f7d77]">
         <TerminalSquare :size="34" />
-        <p>Select an operation to prepare and call it.</p>
+        <p class="m-0">Select an operation to prepare and call it.</p>
       </div>
     </section>
 
-    <aside class="history-panel">
-      <div class="panel-title">
+    <aside :class="[panelClass, 'max-[1150px]:hidden']">
+      <div :class="[eyebrowClass, 'mb-3.5 flex justify-between']">
         <span>History</span>
         <strong>{{ history.length }}</strong>
       </div>
-      <div v-if="history.length === 0" class="quiet history-empty">No calls yet.</div>
-      <div v-for="entry in history" :key="entry.id" class="history-item">
-        <strong>{{ entry.responseStatus ?? "ERR" }}</strong>
-        <span>{{ entry.operationId ?? "Scratch request" }}</span>
-        <small>{{ entry.durationMs ?? 0 }} ms</small>
+      <div v-if="history.length === 0" class="pt-2 text-[#66736d]">No calls yet.</div>
+      <div v-for="entry in history" :key="entry.id" class="grid grid-cols-[44px_1fr] gap-x-2 gap-y-1 border-b border-[#d7dfd8] py-2.5">
+        <strong class="text-[#0a7a69]">{{ entry.responseStatus ?? "ERR" }}</strong>
+        <span class="truncate">{{ entry.operationId ?? "Scratch request" }}</span>
+        <small class="col-start-2 text-[#66736d]">{{ entry.durationMs ?? 0 }} ms</small>
       </div>
     </aside>
   </main>
 </template>
+

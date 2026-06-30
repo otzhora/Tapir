@@ -15,6 +15,7 @@ if (!cryptoWithHash.hash) {
 }
 
 const vue = (await import("@vitejs/plugin-vue")).default;
+const tailwindcss = (await import("@tailwindcss/vite")).default;
 
 export default defineConfig({
   main: {
@@ -25,7 +26,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve("src/renderer"),
-    plugins: [vue()],
+    plugins: [tailwindcss(), vue()],
     resolve: {
       alias: {
         "@renderer": resolve("src/renderer/src")
