@@ -10,11 +10,10 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "baseUrl": ".",
     "paths": {
-      "@tapir/core": ["packages/core/src/index.ts"],
-      "@tapir/openapi": ["packages/openapi/src/index.ts"],
-      "@tapir/storage": ["packages/storage/src/index.ts"]
+      "@tapir/core": ["./packages/core/src/index.ts"],
+      "@tapir/openapi": ["./packages/openapi/src/index.ts"],
+      "@tapir/storage": ["./packages/storage/src/index.ts"]
     }
   }
 }
