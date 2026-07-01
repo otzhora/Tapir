@@ -25,16 +25,20 @@ export interface LocalTapirStorage {
   history: HistoryRepository;
 }
 
-export async function openTapirDatabase(filePath: string): Promise<SqliteDatabase> {
-  const db = new Database(filePath);
+export interface LocalTapirStorageOptions {
+  nativeBinding?: string;
+}
+
+export async function openTapirDatabase(filePath: string, options: LocalTapirStorageOptions = {}): Promise<SqliteDatabase> {
+  const db = new Database(filePath, { nativeBinding: options.nativeBinding });
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   await runMigrations(db);
   return db;
 }
 
-export async function createLocalTapirStorage(filePath: string): Promise<LocalTapirStorage> {
-  const db = await openTapirDatabase(filePath);
+export async function createLocalTapirStorage(filePath: string, options: LocalTapirStorageOptions = {}): Promise<LocalTapirStorage> {
+  const db = await openTapirDatabase(filePath, options);
   const workspace = ensureDefaultWorkspace(db);
   return {
     db,

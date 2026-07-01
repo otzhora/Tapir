@@ -21,7 +21,9 @@ let tapir: TapirApplicationService;
 async function createServices() {
   const dataDir = join(app.getPath("userData"), "tapir-data");
   mkdirSync(dataDir, { recursive: true });
-  const storage = await createLocalTapirStorage(join(dataDir, "tapir.sqlite"));
+  const storage = await createLocalTapirStorage(join(dataDir, "tapir.sqlite"), {
+    nativeBinding: electronBetterSqliteBindingPath()
+  });
   return new TapirApplicationService({
     ...storage,
     authProfiles: new SafeStorageAuthProfileRepository(storage.authProfiles),
@@ -29,6 +31,17 @@ async function createServices() {
     normalizer,
     http: new FetchHttpExecutor()
   });
+}
+
+function electronBetterSqliteBindingPath(): string {
+  return join(
+    process.cwd(),
+    "node_modules",
+    "better-sqlite3",
+    "bin",
+    `${process.platform}-${process.arch}-${process.versions.modules}`,
+    "better-sqlite3.node"
+  );
 }
 
 function createWindow(): void {
