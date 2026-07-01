@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
 import type { CallHistoryEntry } from "@tapir/core";
+import AppHeader from "./components/AppHeader.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
 import OperationsPanel from "./components/OperationsPanel.vue";
 import RequestWorkspace from "./components/RequestWorkspace.vue";
@@ -58,83 +59,98 @@ watch(workspaceServers.selectedServerId, async (serverId) => {
   }
   history.value = await tapir.listHistory(serverId);
 });
+
+function togglePanel(panel: "servers" | "operations" | "history"): void {
+  collapsedPanels[panel] = !collapsedPanels[panel];
+}
 </script>
 
 <template>
-  <main :class="['app-shell grid h-screen bg-[#101316] text-[#d9e1df]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-columns] duration-300 ease-out']" :style="shellStyle">
-    <ServersPanel
-      :collapsed="collapsedPanels.servers"
-      :selected-server-id="workspaceServers.selectedServerId.value"
-      :servers="workspaceServers.servers.value"
-      :workspace="workspaceServers.workspace.value"
-      @collapse="collapsedPanels.servers = $event"
-      @server-added="workspaceServers.addServer"
-      @select-server="workspaceServers.selectedServerId.value = $event"
-    />
-
-    <div class="resize-handle" title="Drag to resize servers" @mousedown="startColumnResize('servers', $event)"></div>
-
-    <OperationsPanel
-      :collapsed="collapsedPanels.operations"
-      :grouped-operations="workspaceServers.groupedOperations.value"
+  <div class="flex h-screen min-w-0 flex-col overflow-hidden bg-[#101316] text-[#d9e1df]">
+    <AppHeader
+      :collapsed-panels="collapsedPanels"
       :operations-count="workspaceServers.operations.value.length"
-      :selected-operation-id="workspaceServers.selectedOperationId.value"
       :selected-server="workspaceServers.selectedServer.value"
-      @collapse="collapsedPanels.operations = $event"
-      @select-operation="workspaceServers.selectOperation"
+      :servers-count="workspaceServers.servers.value.length"
+      :workspace="workspaceServers.workspace.value"
+      @toggle-panel="togglePanel"
     />
 
-    <div class="resize-handle" title="Drag to resize operations" @mousedown="startColumnResize('operations', $event)"></div>
+    <main :class="['app-shell grid min-h-0 flex-1 bg-[#101316] text-[#d9e1df]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-columns] duration-300 ease-out']" :style="shellStyle">
+      <ServersPanel
+        :collapsed="collapsedPanels.servers"
+        :selected-server-id="workspaceServers.selectedServerId.value"
+        :servers="workspaceServers.servers.value"
+        :workspace="workspaceServers.workspace.value"
+        @collapse="collapsedPanels.servers = $event"
+        @server-added="workspaceServers.addServer"
+        @select-server="workspaceServers.selectedServerId.value = $event"
+      />
 
-    <section :class="['grid min-w-0 overflow-hidden bg-[#0f1317]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-rows] duration-300 ease-out']" :style="responseStyle">
-      <RequestWorkspace
-        :active-request-tab="request.activeRequestTab.value"
-        :auth-header-name="request.authHeaderName.value"
-        :auth-secret="request.authSecret.value"
-        :body-value="request.bodyValue.value"
-        :can-send="request.canSend.value"
-        :content-type="request.contentType.value"
-        :curl-command="request.curlCommand.value"
-        :is-previewing="request.isPreviewing.value"
-        :is-sending="request.isSending.value"
-        :operation-url="request.operationUrl.value"
-        :parameter-values="request.parameterValues"
-        :pretty-request="request.prettyRequest.value"
-        :request-body-schema="request.requestBodySchema.value"
-        :request-preview="request.requestPreview.value"
-        :request-tabs="request.requestTabs.value"
-        :responses-schema="request.responsesSchema.value"
-        :selected-content-types="request.selectedContentTypes.value"
-        :selected-operation="workspaceServers.selectedOperation.value"
+      <div class="resize-handle" title="Drag to resize servers" @mousedown="startColumnResize('servers', $event)"></div>
+
+      <OperationsPanel
+        :collapsed="collapsedPanels.operations"
+        :grouped-operations="workspaceServers.groupedOperations.value"
+        :operations-count="workspaceServers.operations.value.length"
+        :selected-operation-id="workspaceServers.selectedOperationId.value"
         :selected-server="workspaceServers.selectedServer.value"
-        :validation-issues="request.validationIssues.value"
-        @call-operation="request.callOperation"
-        @copy-curl="request.copyCurl"
-        @set-parameter="request.setParameterValue"
-        @update-active-request-tab="request.activeRequestTab.value = $event"
-        @update-auth-header-name="request.authHeaderName.value = $event"
-        @update-auth-secret="request.authSecret.value = $event"
-        @update-body-value="request.bodyValue.value = $event"
-        @update-content-type="request.contentType.value = $event"
+        @collapse="collapsedPanels.operations = $event"
+        @select-operation="workspaceServers.selectOperation"
       />
 
-      <div class="resize-handle horizontal" title="Drag to resize response" @mousedown="startResponseResize"></div>
+      <div class="resize-handle" title="Drag to resize operations" @mousedown="startColumnResize('operations', $event)"></div>
 
-      <ResponsePanel
-        :collapsed="collapsedPanels.response"
-        :pretty-body="request.prettyBody.value"
-        :response-view="request.responseView.value"
-        @collapse="collapsedPanels.response = $event"
+      <section :class="['grid min-w-0 overflow-hidden bg-[#0f1317]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-rows] duration-300 ease-out']" :style="responseStyle">
+        <RequestWorkspace
+          :active-request-tab="request.activeRequestTab.value"
+          :auth-header-name="request.authHeaderName.value"
+          :auth-secret="request.authSecret.value"
+          :body-value="request.bodyValue.value"
+          :can-send="request.canSend.value"
+          :content-type="request.contentType.value"
+          :curl-command="request.curlCommand.value"
+          :is-previewing="request.isPreviewing.value"
+          :is-sending="request.isSending.value"
+          :operation-url="request.operationUrl.value"
+          :parameter-values="request.parameterValues"
+          :pretty-request="request.prettyRequest.value"
+          :request-body-schema="request.requestBodySchema.value"
+          :request-preview="request.requestPreview.value"
+          :request-tabs="request.requestTabs.value"
+          :responses-schema="request.responsesSchema.value"
+          :selected-content-types="request.selectedContentTypes.value"
+          :selected-operation="workspaceServers.selectedOperation.value"
+          :selected-server="workspaceServers.selectedServer.value"
+          :validation-issues="request.validationIssues.value"
+          @call-operation="request.callOperation"
+          @copy-curl="request.copyCurl"
+          @set-parameter="request.setParameterValue"
+          @update-active-request-tab="request.activeRequestTab.value = $event"
+          @update-auth-header-name="request.authHeaderName.value = $event"
+          @update-auth-secret="request.authSecret.value = $event"
+          @update-body-value="request.bodyValue.value = $event"
+          @update-content-type="request.contentType.value = $event"
+        />
+
+        <div class="resize-handle horizontal" title="Drag to resize response" @mousedown="startResponseResize"></div>
+
+        <ResponsePanel
+          :collapsed="collapsedPanels.response"
+          :pretty-body="request.prettyBody.value"
+          :response-view="request.responseView.value"
+          @collapse="collapsedPanels.response = $event"
+        />
+      </section>
+
+      <div class="resize-handle" :class="collapsedPanels.history && 'is-hidden-edge'" title="Drag to resize history" @mousedown="startColumnResize('history', $event)"></div>
+
+      <HistoryPanel
+        :collapsed="collapsedPanels.history"
+        :history="history"
+        @collapse="collapsedPanels.history = $event"
+        @restore-history="request.restoreHistory"
       />
-    </section>
-
-    <div class="resize-handle" :class="collapsedPanels.history && 'is-hidden-edge'" title="Drag to resize history" @mousedown="startColumnResize('history', $event)"></div>
-
-    <HistoryPanel
-      :collapsed="collapsedPanels.history"
-      :history="history"
-      @collapse="collapsedPanels.history = $event"
-      @restore-history="request.restoreHistory"
-    />
-  </main>
+    </main>
+  </div>
 </template>

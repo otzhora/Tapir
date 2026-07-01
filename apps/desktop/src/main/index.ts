@@ -51,6 +51,13 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 640,
     title: "Tapir",
+    autoHideMenuBar: true,
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#17191d",
+      symbolColor: "#a8b0b7",
+      height: 44
+    },
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),
       sandbox: false,

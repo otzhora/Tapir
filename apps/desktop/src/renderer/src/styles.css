@@ -73,6 +73,55 @@ button:disabled {
   overflow: hidden;
 }
 
+.app-titlebar {
+  -webkit-app-region: drag;
+}
+
+.app-titlebar button {
+  -webkit-app-region: no-drag;
+}
+
+.chrome-button {
+  display: inline-flex;
+  height: 30px;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 9px;
+  color: #8f9ba5;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.chrome-button:hover {
+  color: #edf4f1;
+  background: #20262b;
+}
+
+.chrome-button.is-active {
+  border-color: #34424a;
+  background: #20262b;
+  color: #edf4f1;
+}
+
+.status-pill {
+  display: inline-flex;
+  height: 26px;
+  min-width: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #303a44;
+  border-radius: 999px;
+  background: #12171b;
+  color: #aeb9b5;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .app-shell.is-dragging {
   transition: none;
 }
