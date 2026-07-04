@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
-import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
 import type {
   TapirIpcChannel,
   TapirIpcRequest,
@@ -13,6 +14,7 @@ import { FetchHttpExecutor } from "./fetchHttpExecutor";
 import { toIpcPayload } from "./ipcSerialization";
 import { SafeStorageAuthProfileRepository } from "./safeStorageAuthProfileRepository";
 
+const require = createRequire(import.meta.url);
 const discovery = new FetchOpenApiDiscoveryService();
 const normalizer = new BasicOpenApiNormalizer();
 
@@ -34,14 +36,22 @@ async function createServices() {
 }
 
 function electronBetterSqliteBindingPath(): string {
-  return join(
-    process.cwd(),
-    "node_modules",
-    "better-sqlite3",
+  const packageRoot = dirname(require.resolve("better-sqlite3/package.json"));
+  const nativeBinding = join(
+    packageRoot,
     "bin",
     `${process.platform}-${process.arch}-${process.versions.modules}`,
     "better-sqlite3.node"
   );
+
+  if (!existsSync(nativeBinding)) {
+    throw new Error(
+      `Missing better-sqlite3 Electron native binding at ${nativeBinding}. ` +
+      "Run `npm run rebuild:native:electron` from the repository root."
+    );
+  }
+
+  return nativeBinding;
 }
 
 function createWindow(): void {
@@ -95,6 +105,12 @@ function registerIpc(): void {
   handle("tapir:previewOperation", async (input) => tapir.previewOperation(input));
   handle("tapir:callOperation", async (input) => tapir.callOperation(input));
   handle("tapir:listHistory", async (serverId) => tapir.listHistory(serverId));
+  handle("tapir:listRequestDrafts", async (input) => tapir.listRequestDrafts(input));
+  handle("tapir:createRequestDraft", async (input) => tapir.createRequestDraft(input));
+  handle("tapir:updateRequestDraft", async (input) => tapir.updateRequestDraft(input));
+  handle("tapir:deleteRequestDraft", async (id) => tapir.deleteRequestDraft(id));
+  handle("tapir:previewCustomRequest", async (input) => tapir.previewCustomRequest(input));
+  handle("tapir:callCustomRequest", async (input) => tapir.callCustomRequest(input));
 }
 
 function handle<Channel extends TapirIpcChannel>(

@@ -30,7 +30,11 @@ describe("SQLite storage", () => {
 
     const migrations = db.prepare("select name from schema_migrations").all() as Array<{ name: string }>;
 
-    expect(migrations).toEqual([{ name: "0001_initial_schema" }]);
+    expect(migrations).toEqual([
+      { name: "0001_initial_schema" },
+      { name: "0002_request_drafts" },
+      { name: "0003_history_request_draft_id" }
+    ]);
   });
 
   it("round-trips server, definition, auth, and history records", async () => {
@@ -78,6 +82,7 @@ describe("SQLite storage", () => {
       workspaceId: workspace.id,
       serverInstanceId: server.id,
       operationId: "listPets",
+      requestDraftId: null,
       requestSnapshotJson: "{}",
       responseStatus: 200,
       responseHeadersJson: "{}",

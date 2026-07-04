@@ -7,6 +7,8 @@ import type {
   AuthProfileRepository,
   CallHistoryEntry,
   HistoryRepository,
+  RequestDraft,
+  RequestDraftRepository,
   SecretValue,
   ServerInstance,
   ServerRepository,
@@ -23,6 +25,7 @@ export interface LocalTapirStorage {
   definitions: ApiDefinitionRepository;
   authProfiles: AuthProfileRepository;
   history: HistoryRepository;
+  requestDrafts: RequestDraftRepository;
 }
 
 export interface LocalTapirStorageOptions {
@@ -46,7 +49,8 @@ export async function createLocalTapirStorage(filePath: string, options: LocalTa
     servers: new SqliteServerRepository(db),
     definitions: new SqliteApiDefinitionRepository(db),
     authProfiles: new SqliteAuthProfileRepository(db),
-    history: new SqliteHistoryRepository(db)
+    history: new SqliteHistoryRepository(db),
+    requestDrafts: new SqliteRequestDraftRepository(db)
   };
 }
 
@@ -181,9 +185,9 @@ export class SqliteHistoryRepository implements HistoryRepository {
     const entry: CallHistoryEntry = { ...input, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
     this.db.prepare(`
       insert into call_history_entries
-      (id, workspace_id, server_instance_id, operation_id, request_snapshot_json, response_status, response_headers_json, response_body, duration_ms, created_at)
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(entry.id, entry.workspaceId, entry.serverInstanceId, entry.operationId, entry.requestSnapshotJson, entry.responseStatus, entry.responseHeadersJson, entry.responseBody, entry.durationMs, entry.createdAt);
+      (id, workspace_id, server_instance_id, operation_id, request_draft_id, request_snapshot_json, response_status, response_headers_json, response_body, duration_ms, created_at)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(entry.id, entry.workspaceId, entry.serverInstanceId, entry.operationId, entry.requestDraftId, entry.requestSnapshotJson, entry.responseStatus, entry.responseHeadersJson, entry.responseBody, entry.durationMs, entry.createdAt);
     return entry;
   }
 
@@ -194,12 +198,113 @@ export class SqliteHistoryRepository implements HistoryRepository {
   }
 }
 
+export class SqliteRequestDraftRepository implements RequestDraftRepository {
+  constructor(private db: SqliteDatabase) {}
+
+  async create(input: Omit<RequestDraft, "createdAt" | "updatedAt">): Promise<RequestDraft> {
+    const now = new Date().toISOString();
+    const draft: RequestDraft = { ...input, createdAt: now, updatedAt: now };
+    this.db.prepare(`
+      insert into request_drafts
+      (id, workspace_id, server_instance_id, source_type, operation_id, name, is_name_manual, method, path, url, parameters_json, headers_json, body, content_type, sort_order, created_at, updated_at)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      draft.id,
+      draft.workspaceId,
+      draft.serverInstanceId,
+      draft.sourceType,
+      draft.operationId,
+      draft.name,
+      draft.isNameManual ? 1 : 0,
+      draft.method,
+      draft.path,
+      draft.url,
+      draft.parametersJson,
+      draft.headersJson,
+      draft.body,
+      draft.contentType,
+      draft.sortOrder,
+      draft.createdAt,
+      draft.updatedAt
+    );
+    return draft;
+  }
+
+  async update(input: RequestDraft): Promise<RequestDraft> {
+    const draft: RequestDraft = { ...input, updatedAt: new Date().toISOString() };
+    this.db.prepare(`
+      update request_drafts
+      set server_instance_id = ?,
+          source_type = ?,
+          operation_id = ?,
+          name = ?,
+          is_name_manual = ?,
+          method = ?,
+          path = ?,
+          url = ?,
+          parameters_json = ?,
+          headers_json = ?,
+          body = ?,
+          content_type = ?,
+          sort_order = ?,
+          updated_at = ?
+      where id = ?
+    `).run(
+      draft.serverInstanceId,
+      draft.sourceType,
+      draft.operationId,
+      draft.name,
+      draft.isNameManual ? 1 : 0,
+      draft.method,
+      draft.path,
+      draft.url,
+      draft.parametersJson,
+      draft.headersJson,
+      draft.body,
+      draft.contentType,
+      draft.sortOrder,
+      draft.updatedAt,
+      draft.id
+    );
+    return draft;
+  }
+
+  async delete(id: string): Promise<void> {
+    this.db.prepare("delete from request_drafts where id = ?").run(id);
+  }
+
+  async listForWorkspace(workspaceId: string): Promise<RequestDraft[]> {
+    const rows = this.db.prepare("select * from request_drafts where workspace_id = ? order by sort_order asc, created_at asc")
+      .all(workspaceId) as DbRequestDraft[];
+    return rows.map(mapRequestDraft);
+  }
+}
+
 type DbWorkspace = { id: string; name: string; created_at: string; updated_at: string };
 type DbServer = { id: string; workspace_id: string; name: string; base_url: string; spec_url: string; api_definition_source_id: string | null; created_at: string; updated_at: string };
 type DbDefinition = { id: string; source_id: string; name: string; version: string; raw_spec_json: string; normalized_json: string; fetched_at: string };
 type DbAuthProfile = { id: string; workspace_id: string; server_instance_id: string | null; name: string; type: "apiKeyHeader"; config_json: string; secret_ref: string; created_at: string; updated_at: string };
 type DbSecret = { id: string; auth_profile_id: string; encrypted_or_plain_value: string; created_at: string; updated_at: string };
-type DbHistory = { id: string; workspace_id: string; server_instance_id: string; operation_id: string | null; request_snapshot_json: string; response_status: number | null; response_headers_json: string | null; response_body: string | null; duration_ms: number | null; created_at: string };
+type DbHistory = { id: string; workspace_id: string; server_instance_id: string; operation_id: string | null; request_draft_id: string | null; request_snapshot_json: string; response_status: number | null; response_headers_json: string | null; response_body: string | null; duration_ms: number | null; created_at: string };
+type DbRequestDraft = {
+  id: string;
+  workspace_id: string;
+  server_instance_id: string | null;
+  source_type: "openapi" | "custom";
+  operation_id: string | null;
+  name: string;
+  is_name_manual: number;
+  method: RequestDraft["method"];
+  path: string;
+  url: string;
+  parameters_json: string;
+  headers_json: string;
+  body: string;
+  content_type: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
 
 function mapWorkspace(row: DbWorkspace): Workspace {
   return { id: row.id, name: row.name, createdAt: row.created_at, updatedAt: row.updated_at };
@@ -222,5 +327,27 @@ function mapSecret(row: DbSecret): SecretValue {
 }
 
 function mapHistory(row: DbHistory): CallHistoryEntry {
-  return { id: row.id, workspaceId: row.workspace_id, serverInstanceId: row.server_instance_id, operationId: row.operation_id, requestSnapshotJson: row.request_snapshot_json, responseStatus: row.response_status, responseHeadersJson: row.response_headers_json, responseBody: row.response_body, durationMs: row.duration_ms, createdAt: row.created_at };
+  return { id: row.id, workspaceId: row.workspace_id, serverInstanceId: row.server_instance_id, operationId: row.operation_id, requestDraftId: row.request_draft_id, requestSnapshotJson: row.request_snapshot_json, responseStatus: row.response_status, responseHeadersJson: row.response_headers_json, responseBody: row.response_body, durationMs: row.duration_ms, createdAt: row.created_at };
+}
+
+function mapRequestDraft(row: DbRequestDraft): RequestDraft {
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    serverInstanceId: row.server_instance_id,
+    sourceType: row.source_type,
+    operationId: row.operation_id,
+    name: row.name,
+    isNameManual: Boolean(row.is_name_manual),
+    method: row.method,
+    path: row.path,
+    url: row.url,
+    parametersJson: row.parameters_json,
+    headersJson: row.headers_json,
+    body: row.body,
+    contentType: row.content_type,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
 }

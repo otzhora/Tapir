@@ -1,8 +1,12 @@
 import type {
   CallHistoryEntry,
+  HttpMethod,
   NormalizedApiDefinition,
   NormalizedOperation,
   PreparedOperationRequest,
+  RequestDraft,
+  RequestDraftHeader,
+  RequestDraftParameter,
   ServerInstance,
   UserAuthProfile,
   Workspace
@@ -35,6 +39,7 @@ export interface SaveApiKeyHeaderRequest {
 
 export interface CallOperationRequest {
   serverId: string;
+  requestDraftId?: string;
   operation: NormalizedOperation;
   values: Record<string, string>;
   body?: string;
@@ -62,6 +67,44 @@ export interface PreviewOperationRequest extends CallOperationRequest {}
 
 export interface PreviewOperationResponse extends PreparedOperationRequest {}
 
+export interface CreateRequestDraftRequest {
+  serverId: string | null;
+  sourceType: RequestDraft["sourceType"];
+  operationId: string | null;
+  name: string;
+  isNameManual?: boolean;
+  method: HttpMethod;
+  path?: string;
+  url?: string;
+  parameters?: RequestDraftParameter[];
+  headers?: RequestDraftHeader[];
+  body?: string;
+  contentType?: string;
+  sortOrder?: number;
+}
+
+export interface UpdateRequestDraftRequest {
+  draft: RequestDraft;
+}
+
+export interface ListRequestDraftsRequest {
+  workspaceId: string;
+}
+
+export interface PreviewCustomRequestRequest {
+  method: HttpMethod;
+  url: string;
+  parameters: RequestDraftParameter[];
+  headers: RequestDraftHeader[];
+  body?: string;
+  contentType?: string;
+}
+
+export interface CallCustomRequestRequest extends PreviewCustomRequestRequest {
+  serverId: string | null;
+  requestDraftId?: string;
+}
+
 export interface TapirIpcContract {
   "tapir:getInitialState": {
     request: void;
@@ -86,6 +129,30 @@ export interface TapirIpcContract {
   "tapir:listHistory": {
     request: string;
     response: CallHistoryEntry[];
+  };
+  "tapir:listRequestDrafts": {
+    request: ListRequestDraftsRequest;
+    response: RequestDraft[];
+  };
+  "tapir:createRequestDraft": {
+    request: CreateRequestDraftRequest;
+    response: RequestDraft;
+  };
+  "tapir:updateRequestDraft": {
+    request: UpdateRequestDraftRequest;
+    response: RequestDraft;
+  };
+  "tapir:deleteRequestDraft": {
+    request: string;
+    response: void;
+  };
+  "tapir:previewCustomRequest": {
+    request: PreviewCustomRequestRequest;
+    response: PreviewOperationResponse;
+  };
+  "tapir:callCustomRequest": {
+    request: CallCustomRequestRequest;
+    response: CallOperationResponse;
   };
 }
 

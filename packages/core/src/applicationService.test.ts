@@ -9,6 +9,7 @@ import type {
   HttpExecutor,
   OpenApiDiscoveryService,
   OpenApiNormalizer,
+  RequestDraftRepository,
   ServerInstance,
   ServerRepository,
   Workspace
@@ -29,6 +30,7 @@ describe("TapirApplicationService", () => {
       definitions: new MemoryDefinitionRepository(),
       authProfiles: unusedAuthProfiles(),
       history: unusedHistory(),
+      requestDrafts: unusedRequestDrafts(),
       discovery: fixedDiscovery(),
       normalizer: fixedNormalizer(),
       http: unusedHttp()
@@ -131,6 +133,23 @@ function unusedHistory(): HistoryRepository {
       throw new Error("Not used.");
     },
     async listForServer() {
+      throw new Error("Not used.");
+    }
+  };
+}
+
+function unusedRequestDrafts(): RequestDraftRepository {
+  return {
+    async create() {
+      throw new Error("Not used.");
+    },
+    async update() {
+      throw new Error("Not used.");
+    },
+    async delete() {
+      throw new Error("Not used.");
+    },
+    async listForWorkspace() {
       throw new Error("Not used.");
     }
   };

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ChevronLeft, ListFilter, TerminalSquare } from "lucide-vue-next";
+import { ChevronLeft, ListFilter, Plus, TerminalSquare } from "lucide-vue-next";
 import type { NormalizedOperation, ServerWithDefinition } from "@tapir/core";
+import { CUSTOM_OPERATION_ID } from "../composables/useOperationRequest";
 import { activeItemClass, eyebrowClass, itemClass, panelClass } from "../uiClasses";
 import MethodBadge from "./MethodBadge.vue";
 
@@ -13,7 +14,10 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{
+  addCustomRequest: [];
+  addOperationRequest: [operation: NormalizedOperation];
   collapse: [value: boolean];
+  selectCustom: [];
   selectOperation: [operation: NormalizedOperation];
 }>();
 </script>
@@ -40,6 +44,21 @@ const emit = defineEmits<{
       </div>
 
       <template v-else>
+        <div class="grid gap-2.5">
+          <h2 class="mb-0.5 mt-1 text-xs font-bold uppercase text-[#77838d]">Custom</h2>
+          <button
+            :class="[itemClass, selectedOperationId === CUSTOM_OPERATION_ID && activeItemClass]"
+            @click="emit('selectCustom')"
+          >
+            <span class="grid h-7 w-14 place-items-center bg-[#2a3037] text-[11px] font-black text-[#dce6e2]">HTTP</span>
+            <span class="grid min-w-0 gap-[3px]">
+              <strong class="truncate">Custom requests</strong>
+              <small class="truncate text-[#8f9ba5]">Any method, URL, and headers</small>
+            </span>
+            <Plus :size="16" class="ml-auto shrink-0 text-[#8f9ba5] hover:text-white" @click.stop="emit('addCustomRequest')" />
+          </button>
+        </div>
+
         <div v-for="group in groupedOperations" :key="group.name" class="grid gap-2.5">
           <h2 class="mb-0.5 mt-4 text-xs font-bold uppercase text-[#77838d]">{{ group.name }}</h2>
           <button
@@ -53,6 +72,7 @@ const emit = defineEmits<{
               <strong class="truncate">{{ operation.summary || operation.operationId }}</strong>
               <small class="truncate text-[#8f9ba5]">{{ operation.path }}</small>
             </span>
+            <Plus :size="16" class="ml-auto shrink-0 text-[#8f9ba5] hover:text-white" @click.stop="emit('addOperationRequest', operation)" />
           </button>
         </div>
       </template>

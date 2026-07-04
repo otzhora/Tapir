@@ -2,7 +2,9 @@ import type {
   NormalizedOperation,
   PreparedOperationRequest,
   PreparedRequest,
-  PreparedRequestValidationIssue
+  PreparedRequestValidationIssue,
+  RequestDraftHeader,
+  RequestDraftParameter
 } from "./index";
 
 export interface PrepareOperationRequestInput {
@@ -69,6 +71,61 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
   return {
     request,
     redactedRequest: redactRequest(request, apiKeyHeaderName),
+    validationIssues
+  };
+}
+
+export interface PrepareCustomRequestInput {
+  method: PreparedRequest["method"];
+  url: string;
+  parameters: RequestDraftParameter[];
+  headers: RequestDraftHeader[];
+  body?: string;
+  contentType?: string;
+}
+
+export function prepareCustomRequest(input: PrepareCustomRequestInput): PreparedOperationRequest {
+  const validationIssues: PreparedRequestValidationIssue[] = [];
+  const urlValue = input.url.trim();
+  let url: URL | null = null;
+  try {
+    url = new URL(urlValue);
+  } catch {
+    validationIssues.push({ field: "url", message: "Custom request URL must be absolute." });
+  }
+
+  if (url) {
+    for (const parameter of input.parameters.filter((parameter) => parameter.enabled && parameter.in === "query")) {
+      appendQueryValues(url, parameter.name.trim(), parameter.value);
+    }
+  }
+
+  const headers: Record<string, string> = {};
+  for (const header of input.headers.filter((header) => header.enabled)) {
+    const name = header.name.trim();
+    if (name) headers[name] = header.value;
+  }
+  for (const parameter of input.parameters.filter((parameter) => parameter.enabled && parameter.in === "header")) {
+    const name = parameter.name.trim();
+    if (name) headers[name] = parameter.value;
+  }
+
+  const body = input.method === "GET" || input.method === "HEAD" ? undefined : input.body;
+  const contentType = input.contentType?.trim() || "application/json";
+  if (body) {
+    headers["content-type"] = headers["content-type"] ?? contentType;
+    if (contentType.includes("json")) validateJsonBody(body, validationIssues);
+  }
+
+  const request = {
+    method: input.method,
+    url: url?.toString() ?? urlValue,
+    headers,
+    body
+  };
+  return {
+    request,
+    redactedRequest: request,
     validationIssues
   };
 }

@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
-import type { CallHistoryEntry } from "@tapir/core";
+import { nextTick, onMounted, ref, watch } from "vue";
+import type { CallHistoryEntry, NormalizedOperation } from "@tapir/core";
 import AppHeader from "./components/AppHeader.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
 import OperationsPanel from "./components/OperationsPanel.vue";
 import RequestWorkspace from "./components/RequestWorkspace.vue";
 import ResponsePanel from "./components/ResponsePanel.vue";
 import ServersPanel from "./components/ServersPanel.vue";
-import { useOperationRequest } from "./composables/useOperationRequest";
+import { CUSTOM_OPERATION_ID, useOperationRequest } from "./composables/useOperationRequest";
 import { useResizablePanels } from "./composables/useResizablePanels";
 import { useWorkspaceServers } from "./composables/useWorkspaceServers";
 import { bridgeUnavailableMessage, getTapirBridge } from "./tapirBridge";
@@ -35,6 +35,7 @@ const request = useOperationRequest({
   selectedOperation: workspaceServers.selectedOperation,
   selectedOperationId: workspaceServers.selectedOperationId,
   selectedServer: workspaceServers.selectedServer,
+  workspace: workspaceServers.workspace,
   setErrorMessage: (message) => {
     errorMessage.value = message;
   }
@@ -42,12 +43,11 @@ const request = useOperationRequest({
 
 onMounted(async () => {
   await workspaceServers.loadInitialState();
+  await request.loadDrafts();
 });
 
 watch(workspaceServers.selectedServerId, async (serverId) => {
   workspaceServers.selectedOperationId.value = workspaceServers.operations.value[0]?.operationId ?? null;
-  request.responseView.value = null;
-  request.clearRequestInputs();
   if (!serverId) {
     history.value = [];
     return;
@@ -59,6 +59,28 @@ watch(workspaceServers.selectedServerId, async (serverId) => {
   }
   history.value = await tapir.listHistory(serverId);
 });
+
+async function selectOperation(operation: NormalizedOperation): Promise<void> {
+  workspaceServers.selectOperation(operation);
+  await nextTick();
+  await request.ensureActiveSpaceHasDraft();
+}
+
+async function addOperationRequest(operation: NormalizedOperation): Promise<void> {
+  workspaceServers.selectOperation(operation);
+  await request.createOpenApiRequest(operation);
+}
+
+async function selectCustom(): Promise<void> {
+  workspaceServers.selectedOperationId.value = CUSTOM_OPERATION_ID;
+  await nextTick();
+  await request.ensureActiveSpaceHasDraft();
+}
+
+async function addCustomRequest(): Promise<void> {
+  workspaceServers.selectedOperationId.value = CUSTOM_OPERATION_ID;
+  await request.createCustomRequest();
+}
 
 function togglePanel(panel: "servers" | "operations" | "history"): void {
   collapsedPanels[panel] = !collapsedPanels[panel];
@@ -95,25 +117,28 @@ function togglePanel(panel: "servers" | "operations" | "history"): void {
         :operations-count="workspaceServers.operations.value.length"
         :selected-operation-id="workspaceServers.selectedOperationId.value"
         :selected-server="workspaceServers.selectedServer.value"
+        @add-custom-request="addCustomRequest"
+        @add-operation-request="addOperationRequest"
         @collapse="collapsedPanels.operations = $event"
-        @select-operation="workspaceServers.selectOperation"
+        @select-custom="selectCustom"
+        @select-operation="selectOperation"
       />
 
       <div class="resize-handle" title="Drag to resize operations" @mousedown="startColumnResize('operations', $event)"></div>
 
       <section :class="['grid min-w-0 overflow-hidden bg-[#0f1317]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-rows] duration-300 ease-out']" :style="responseStyle">
         <RequestWorkspace
+          :active-draft="request.activeDraft.value"
           :active-request-tab="request.activeRequestTab.value"
-          :auth-header-name="request.authHeaderName.value"
-          :auth-secret="request.authSecret.value"
-          :body-value="request.bodyValue.value"
           :can-send="request.canSend.value"
-          :content-type="request.contentType.value"
           :curl-command="request.curlCommand.value"
+          :draft-tabs="request.visibleDrafts.value"
+          :headers="request.headers.value"
+          :is-custom-space="request.isCustomSpace.value"
           :is-previewing="request.isPreviewing.value"
           :is-sending="request.isSending.value"
           :operation-url="request.operationUrl.value"
-          :parameter-values="request.parameterValues"
+          :parameters="request.parameters.value"
           :pretty-request="request.prettyRequest.value"
           :request-body-schema="request.requestBodySchema.value"
           :request-preview="request.requestPreview.value"
@@ -123,14 +148,26 @@ function togglePanel(panel: "servers" | "operations" | "history"): void {
           :selected-operation="workspaceServers.selectedOperation.value"
           :selected-server="workspaceServers.selectedServer.value"
           :validation-issues="request.validationIssues.value"
+          @add-header="request.addHeader"
+          @add-parameter="request.addParameter"
           @call-operation="request.callOperation"
+          @close-draft="request.closeDraft"
           @copy-curl="request.copyCurl"
+          @create-draft="request.isCustomSpace.value ? request.createCustomRequest() : workspaceServers.selectedOperation.value && request.createOpenApiRequest(workspaceServers.selectedOperation.value)"
+          @remove-header="request.removeHeader"
+          @remove-parameter="request.removeParameter"
+          @select-draft="request.selectDraft"
           @set-parameter="request.setParameterValue"
+          @toggle-header="request.toggleHeader"
+          @toggle-parameter="request.toggleParameter"
           @update-active-request-tab="request.activeRequestTab.value = $event"
-          @update-auth-header-name="request.authHeaderName.value = $event"
-          @update-auth-secret="request.authSecret.value = $event"
-          @update-body-value="request.bodyValue.value = $event"
-          @update-content-type="request.contentType.value = $event"
+          @update-body-value="request.updateBodyValue"
+          @update-content-type="request.updateContentType"
+          @update-draft-name="request.updateDraftName"
+          @update-header="request.updateHeader"
+          @update-method="request.updateMethod"
+          @update-parameter-name="request.updateParameterName"
+          @update-url="request.updateUrl"
         />
 
         <div class="resize-handle horizontal" title="Drag to resize response" @mousedown="startResponseResize"></div>

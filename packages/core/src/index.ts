@@ -122,6 +122,46 @@ export interface PreparedOperationRequest {
   validationIssues: PreparedRequestValidationIssue[];
 }
 
+export type RequestDraftSourceType = "openapi" | "custom";
+
+export interface RequestDraftParameter {
+  id: string;
+  name: string;
+  in: "path" | "query" | "header";
+  value: string;
+  enabled: boolean;
+  required?: boolean;
+  description?: string;
+  source: "openapi" | "custom";
+}
+
+export interface RequestDraftHeader {
+  id: string;
+  name: string;
+  value: string;
+  enabled: boolean;
+}
+
+export interface RequestDraft {
+  id: string;
+  workspaceId: string;
+  serverInstanceId: string | null;
+  sourceType: RequestDraftSourceType;
+  operationId: string | null;
+  name: string;
+  isNameManual: boolean;
+  method: HttpMethod;
+  path: string;
+  url: string;
+  parametersJson: string;
+  headersJson: string;
+  body: string;
+  contentType: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface HttpResponseSnapshot {
   status: number;
   headers: Record<string, string>;
@@ -134,6 +174,7 @@ export interface CallHistoryEntry {
   workspaceId: string;
   serverInstanceId: string;
   operationId: string | null;
+  requestDraftId: string | null;
   requestSnapshotJson: string;
   responseStatus: number | null;
   responseHeadersJson: string | null;
@@ -168,6 +209,13 @@ export interface AuthProfileRepository {
 export interface HistoryRepository {
   create(input: Omit<CallHistoryEntry, "id" | "createdAt">): Promise<CallHistoryEntry>;
   listForServer(serverInstanceId: string): Promise<CallHistoryEntry[]>;
+}
+
+export interface RequestDraftRepository {
+  create(input: Omit<RequestDraft, "createdAt" | "updatedAt">): Promise<RequestDraft>;
+  update(input: RequestDraft): Promise<RequestDraft>;
+  delete(id: string): Promise<void>;
+  listForWorkspace(workspaceId: string): Promise<RequestDraft[]>;
 }
 
 export interface HttpExecutor {

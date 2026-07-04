@@ -92,6 +92,42 @@ export async function runMigrations(db: SqliteDatabase): Promise<void> {
           "drop table server_instances",
           "drop table workspaces"
         ])
+      },
+      {
+        name: "0002_request_drafts",
+        up: async ({ context }) => runTransaction(context.db, [
+          `create table request_drafts (
+            id text primary key,
+            workspace_id text not null references workspaces(id),
+            server_instance_id text references server_instances(id),
+            source_type text not null,
+            operation_id text,
+            name text not null,
+            is_name_manual integer not null,
+            method text not null,
+            path text not null,
+            url text not null,
+            parameters_json text not null,
+            headers_json text not null,
+            body text not null,
+            content_type text not null,
+            sort_order integer not null,
+            created_at text not null,
+            updated_at text not null
+          )`,
+          "create index request_drafts_workspace_idx on request_drafts(workspace_id, server_instance_id, operation_id, source_type, sort_order)"
+        ]),
+        down: async ({ context }) => runTransaction(context.db, [
+          "drop index request_drafts_workspace_idx",
+          "drop table request_drafts"
+        ])
+      },
+      {
+        name: "0003_history_request_draft_id",
+        up: async ({ context }) => runTransaction(context.db, [
+          "alter table call_history_entries add column request_draft_id text"
+        ]),
+        down: async () => undefined
       }
     ],
     storage: new BetterSqliteUmzugStorage(db)
