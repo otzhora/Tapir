@@ -196,7 +196,6 @@ body.is-resizing {
   grid-template-columns: minmax(130px, 0.65fr) 96px minmax(170px, 1fr);
   overflow: hidden;
   border: 1px solid #303a44;
-  border-radius: 8px;
   background: #0f1317;
 }
 
@@ -237,7 +236,6 @@ body.is-resizing {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   border: 1px solid #303a44;
-  border-radius: 8px;
   background: #0b0f12;
   padding: 14px;
   color: #dbe7e3;
