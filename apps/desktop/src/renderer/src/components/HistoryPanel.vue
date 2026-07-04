@@ -20,22 +20,22 @@ const emit = defineEmits<{
       <span>History</span>
       <span class="inline-flex items-center gap-2">
         <strong>{{ history.length }}</strong>
-        <button class="rounded-md p-1.5 text-[#8f9ba5] transition hover:bg-[#20262d] hover:text-white" title="Collapse history" @click="emit('collapse', true)">
+        <button class="rounded-md p-1.5 text-[#97a3ac] transition hover:bg-[#232a31] hover:text-white" title="Collapse history" @click="emit('collapse', true)">
           <ChevronRight :size="17" />
         </button>
       </span>
     </div>
     <div class="min-h-0 overflow-auto">
-      <div v-if="history.length === 0" class="pt-2 text-[#8f9ba5]">No calls yet.</div>
-      <button v-for="entry in history" :key="entry.id" class="grid w-full grid-cols-[44px_1fr_auto] gap-x-2 gap-y-1 border-b border-[#263039] py-2.5 text-left text-inherit transition hover:bg-[#1f252b]" title="Restore request" @click="emit('restoreHistory', entry)">
-        <strong :class="entry.responseStatus && entry.responseStatus < 400 ? 'text-[#43e2b2]' : 'text-[#ff8b7c]'">{{ entry.responseStatus ?? "ERR" }}</strong>
+      <div v-if="history.length === 0" class="pt-2 text-[#97a3ac]">No calls yet.</div>
+      <button v-for="entry in history" :key="entry.id" class="grid w-full grid-cols-[44px_1fr_auto] gap-x-2 gap-y-1 rounded-md border border-transparent px-2 py-2.5 text-left text-inherit transition hover:border-[#303943] hover:bg-[#1b2229]" title="Restore request" @click="emit('restoreHistory', entry)">
+        <strong :class="entry.responseStatus && entry.responseStatus < 400 ? 'text-[#49d9ae]' : 'text-[#ff8b7c]'">{{ entry.responseStatus ?? "ERR" }}</strong>
         <span class="truncate">{{ entry.operationId ?? "Scratch request" }}</span>
-        <RotateCcw :size="14" class="mt-0.5 text-[#8f9ba5]" />
-        <small class="col-span-2 col-start-2 text-[#8f9ba5]">{{ entry.durationMs ?? 0 }} ms · {{ new Date(entry.createdAt).toLocaleString() }}</small>
+        <RotateCcw :size="14" class="mt-0.5 text-[#97a3ac]" />
+        <small class="col-span-2 col-start-2 text-[#97a3ac]">{{ entry.durationMs ?? 0 }} ms · {{ new Date(entry.createdAt).toLocaleString() }}</small>
       </button>
     </div>
   </aside>
-  <button v-else class="grid min-w-0 place-items-start border-l border-[#263039] bg-[#15191d] px-2 pt-7 text-[#8f9ba5]" title="Expand history" @click="emit('collapse', false)">
+  <button v-else class="grid min-w-0 place-items-start border-l border-[#252d35] bg-[#12171d] px-2 pt-7 text-[#97a3ac]" title="Expand history" @click="emit('collapse', false)">
     <RotateCcw :size="20" />
   </button>
 </template>

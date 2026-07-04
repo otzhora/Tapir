@@ -1,5 +1,6 @@
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { npmCommand } from "./npm-command.mjs";
 import { run } from "./run-dev-processes.mjs";
 
 const commands = [
@@ -22,12 +23,6 @@ const commands = [
 ];
 
 run(commands);
-
-function npmCommand(args) {
-  return process.platform === "win32"
-    ? { command: "cmd.exe", args: ["/d", "/s", "/c", "npm", ...args] }
-    : { command: "npm", args };
-}
 
 function fixturePath(name) {
   return fileURLToPath(new URL(`../test-projects/${name}/`, import.meta.url));

@@ -53,26 +53,26 @@ function toErrorMessage(error: unknown): string {
 
 <template>
   <aside :class="[panelClass, collapsed && 'overflow-hidden px-2']">
-    <button v-if="collapsed" class="grid h-full w-full place-items-start pt-3 text-[#8f9ba5]" title="Expand servers" @click="emit('collapse', false)">
+    <button v-if="collapsed" class="grid h-full w-full place-items-start pt-3 text-[#97a3ac]" title="Expand servers" @click="emit('collapse', false)">
       <Server :size="20" />
     </button>
     <template v-else>
       <div class="mb-5 flex items-center gap-3">
-        <div class="grid size-9 place-items-center rounded-md border border-[#34424a] bg-[#12b886] font-black text-[#07100e]">T</div>
+        <div class="grid size-9 place-items-center rounded-md border border-[#2d7b68] bg-[#1fc294] font-black text-[#06110f] shadow-[0_8px_22px_rgba(31,194,148,0.14)]">T</div>
         <div>
-          <h1 class="m-0 text-[22px] font-bold">Tapir</h1>
-          <p class="m-0 text-[#8f9ba5]">{{ workspace?.name ?? "Local Workspace" }}</p>
+          <h1 class="m-0 text-[20px] font-bold text-[#f3f7f5]">Tapir</h1>
+          <p class="m-0 text-[13px] text-[#97a3ac]">{{ workspace?.name ?? "Local Workspace" }}</p>
         </div>
-        <button class="ml-auto rounded-md p-1.5 text-[#8f9ba5] transition hover:bg-[#20262d] hover:text-white" title="Collapse servers" @click="emit('collapse', true)">
+        <button class="ml-auto rounded-md p-1.5 text-[#97a3ac] transition hover:bg-[#232a31] hover:text-white" title="Collapse servers" @click="emit('collapse', true)">
           <ChevronLeft :size="17" />
         </button>
       </div>
 
-      <form class="mb-3.5 grid gap-2" @submit.prevent="addServer">
+      <form class="mb-4 grid gap-2.5" @submit.prevent="addServer">
         <label for="base-url" :class="eyebrowClass">Add Server</label>
-        <div class="grid grid-cols-[1fr_40px] gap-2">
+        <div class="grid grid-cols-[minmax(0,1fr)_44px] gap-2.5">
           <input id="base-url" v-model="baseUrl" :class="fieldClass" placeholder="https://api.example.com" required />
-          <button class="inline-flex items-center justify-center gap-2 rounded-md bg-[#12b886] font-extrabold text-[#06110f] transition hover:bg-[#20c997] disabled:cursor-not-allowed disabled:opacity-60" type="submit" :disabled="isAddingServer || !baseUrl.trim()" title="Discover spec">
+          <button class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#1fc294] font-extrabold text-[#06110f] shadow-[0_8px_18px_rgba(31,194,148,0.12)] transition hover:bg-[#34d0a5] disabled:cursor-not-allowed disabled:opacity-60" type="submit" :disabled="isAddingServer || !baseUrl.trim()" title="Discover spec">
             <RefreshCw v-if="isAddingServer" :size="17" class="animate-spin" />
             <Plus v-else :size="18" />
           </button>
@@ -91,7 +91,7 @@ function toErrorMessage(error: unknown): string {
           <Server :size="17" />
           <span class="grid min-w-0 gap-[3px]">
             <strong class="truncate">{{ item.server.name }}</strong>
-            <small class="truncate text-[#8f9ba5]">{{ item.server.baseUrl }}</small>
+            <small class="truncate text-[#97a3ac]">{{ item.server.baseUrl }}</small>
           </span>
         </button>
       </div>

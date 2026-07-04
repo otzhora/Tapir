@@ -48,6 +48,7 @@ export function run(commands) {
   for (const item of commands) {
     const child = spawn(item.command, item.args, {
       cwd: item.cwd instanceof URL ? fileURLToPath(item.cwd) : item.cwd,
+      env: item.env ? { ...process.env, ...item.env } : process.env,
       stdio: ["ignore", "pipe", "pipe"]
     });
 

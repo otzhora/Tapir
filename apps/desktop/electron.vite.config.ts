@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import crypto, { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 
 type CryptoWithHash = typeof crypto & {
@@ -16,20 +17,34 @@ if (!cryptoWithHash.hash) {
 
 const vue = (await import("@vitejs/plugin-vue")).default;
 const tailwindcss = (await import("@tailwindcss/vite")).default;
+const workspacePackages = ["@tapir/core", "@tapir/openapi", "@tapir/storage"];
+const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+const desktopRoot = fileURLToPath(new URL("./", import.meta.url));
+const workspaceAliases = {
+  "@tapir/core": resolve(repoRoot, "packages/core/src/index.ts"),
+  "@tapir/openapi": resolve(repoRoot, "packages/openapi/src/index.ts"),
+  "@tapir/storage": resolve(repoRoot, "packages/storage/src/index.ts")
+};
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin({ exclude: workspacePackages })],
+    resolve: {
+      alias: workspaceAliases
+    }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    resolve: {
+      alias: workspaceAliases
+    }
   },
   renderer: {
-    root: resolve("src/renderer"),
+    root: resolve(desktopRoot, "src/renderer"),
     plugins: [tailwindcss(), vue()],
     resolve: {
       alias: {
-        "@renderer": resolve("src/renderer/src")
+        "@renderer": resolve(desktopRoot, "src/renderer/src")
       }
     }
   }

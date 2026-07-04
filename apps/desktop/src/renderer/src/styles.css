@@ -19,12 +19,8 @@ body {
   min-width: 760px;
   min-height: 100vh;
   overflow: hidden;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    #101316;
-  background-size: 28px 28px;
-  color: #d9e1df;
+  background: #0b0e12;
+  color: #e5ebe8;
   font-family: "Aptos", "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -46,7 +42,7 @@ button:disabled {
 }
 
 ::selection {
-  background: rgba(18, 184, 134, 0.35);
+  background: rgba(31, 194, 148, 0.34);
 }
 
 ::-webkit-scrollbar {
@@ -55,17 +51,17 @@ button:disabled {
 }
 
 ::-webkit-scrollbar-track {
-  background: #101316;
+  background: #0b0e12;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #303a44;
-  border: 3px solid #101316;
+  background: #333c46;
+  border: 3px solid #0b0e12;
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #46535f;
+  background: #4c5864;
 }
 
 .app-shell {
@@ -90,21 +86,22 @@ button:disabled {
   border: 1px solid transparent;
   border-radius: 6px;
   padding: 0 9px;
-  color: #8f9ba5;
+  color: #93a0aa;
   font-weight: 700;
   white-space: nowrap;
-  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
+  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
 
 .chrome-button:hover {
-  color: #edf4f1;
-  background: #20262b;
+  color: #f3f7f5;
+  background: #20262c;
 }
 
 .chrome-button.is-active {
-  border-color: #34424a;
-  background: #20262b;
-  color: #edf4f1;
+  border-color: #3a4651;
+  background: #252c33;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  color: #f3f7f5;
 }
 
 .status-pill {
@@ -114,10 +111,10 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid #303a44;
+  border: 1px solid #303943;
   border-radius: 999px;
-  background: #12171b;
-  color: #aeb9b5;
+  background: #151a1f;
+  color: #b7c1bd;
   font-size: 12px;
   font-weight: 800;
 }
@@ -130,7 +127,7 @@ button:disabled {
   position: relative;
   z-index: 5;
   cursor: col-resize;
-  background: #101316;
+  background: #0b0e12;
   transition: background-color 180ms ease, box-shadow 180ms ease;
 }
 
@@ -139,14 +136,14 @@ button:disabled {
   position: absolute;
   inset: 0 2px;
   border-radius: 999px;
-  background: #263039;
+  background: #28313a;
   opacity: 0;
   transition: opacity 180ms ease, background-color 180ms ease;
 }
 
 .resize-handle:hover::before,
 body.is-resizing .resize-handle::before {
-  background: #12b886;
+  background: #1fc294;
   opacity: 1;
 }
 
@@ -159,7 +156,7 @@ body.is-resizing .resize-handle::before {
 }
 
 .resize-handle.is-hidden-edge {
-  border-left: 1px solid #263039;
+  border-left: 1px solid #252d35;
 }
 
 body.is-resizing {
@@ -174,7 +171,7 @@ body.is-resizing {
   gap: 8px;
   border-bottom: 2px solid transparent;
   padding: 0 11px;
-  color: #8f9ba5;
+  color: #95a1aa;
   font-size: 13px;
   font-weight: 800;
   white-space: nowrap;
@@ -182,13 +179,13 @@ body.is-resizing {
 }
 
 .tab-button:hover {
-  color: #edf4f1;
-  background: #1c2228;
+  color: #f3f7f5;
+  background: #1b2127;
 }
 
 .tab-button.is-active {
-  color: #edf4f1;
-  border-color: #ff9f43;
+  color: #f3f7f5;
+  border-color: #f2b84b;
 }
 
 .request-tab {
@@ -199,25 +196,26 @@ body.is-resizing {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  border: 1px solid #263039;
+  border: 1px solid #29323b;
   border-bottom-color: transparent;
-  background: #151a1f;
-  padding: 0 9px;
-  color: #9aa6ae;
+  border-radius: 7px 7px 0 0;
+  background: #151a20;
+  padding: 0 10px;
+  color: #9ca7af;
   font-size: 13px;
   font-weight: 800;
   transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
 }
 
 .request-tab:hover {
-  background: #1c2228;
-  color: #edf4f1;
+  background: #20272e;
+  color: #f3f7f5;
 }
 
 .request-tab.is-active {
-  border-color: #34424a;
-  background: #20262d;
-  color: #edf4f1;
+  border-color: #3d4854;
+  background: #242b33;
+  color: #f3f7f5;
 }
 
 .mini-button,
@@ -227,9 +225,10 @@ body.is-resizing {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid #303a44;
-  background: #0f1317;
-  color: #d9e1df;
+  border: 1px solid #303943;
+  border-radius: 6px;
+  background: #11161b;
+  color: #e5ebe8;
   font-size: 13px;
   font-weight: 800;
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
@@ -247,8 +246,8 @@ body.is-resizing {
 
 .mini-button:hover,
 .icon-button:hover {
-  border-color: #46535f;
-  background: #20262d;
+  border-color: #4d5864;
+  background: #232a31;
   color: #fff;
 }
 
@@ -256,16 +255,18 @@ body.is-resizing {
   display: grid;
   grid-template-columns: minmax(130px, 0.65fr) 96px minmax(170px, 1fr);
   overflow: hidden;
-  border: 1px solid #303a44;
-  background: #0f1317;
+  border: 1px solid #303943;
+  border-radius: 7px;
+  background: #10151a;
 }
 
 .request-param-grid,
 .request-header-grid {
   display: grid;
   overflow: hidden;
-  border: 1px solid #303a44;
-  background: #0f1317;
+  border: 1px solid #303943;
+  border-radius: 7px;
+  background: #10151a;
 }
 
 .request-param-grid {
@@ -285,8 +286,8 @@ body.is-resizing {
 .table-head,
 .table-cell {
   min-width: 0;
-  border-right: 1px solid #303a44;
-  border-bottom: 1px solid #303a44;
+  border-right: 1px solid #2b343e;
+  border-bottom: 1px solid #2b343e;
   padding: 11px 12px;
 }
 
@@ -296,14 +297,14 @@ body.is-resizing {
 }
 
 .table-head {
-  background: #181e24;
-  color: #9aa6ae;
+  background: #1a2027;
+  color: #9faab2;
   font-size: 12px;
   font-weight: 900;
 }
 
 .table-cell {
-  color: #d9e1df;
+  color: #e5ebe8;
 }
 
 .code-block {
@@ -312,11 +313,31 @@ body.is-resizing {
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  border: 1px solid #303a44;
-  background: #0b0f12;
+  border: 1px solid #2e3842;
+  border-radius: 7px;
+  background: #0a0d10;
   padding: 14px;
-  color: #dbe7e3;
+  color: #dfe8e5;
   font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
   font-size: 13px;
   line-height: 1.65;
+}
+
+.empty-state {
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  color: #9faab2;
+  text-align: center;
+}
+
+.empty-state svg {
+  color: #7f8b94;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.18));
+}
+
+.empty-state p {
+  margin: 0;
+  max-width: 34ch;
+  line-height: 1.55;
 }
