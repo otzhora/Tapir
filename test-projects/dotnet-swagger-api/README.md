@@ -1,6 +1,11 @@
-# Tapir .NET Swagger API
+# Tapir .NET Logistics API
 
-ASP.NET Core fixture for testing Tapir against a small OpenAPI-backed service.
+ASP.NET Core fixture for testing Tapir against a realistic Swashbuckle-generated OpenAPI document.
+
+The API uses typed minimal endpoints so the emitted schema includes framework-generated shapes for
+nested records, enums, arrays, dictionaries, nullable values, validation attributes, typed request
+bodies, route/query/header/form parameters, multipart uploads, multiple response types, and security
+schemes.
 
 ## Run
 
@@ -17,3 +22,5 @@ Useful URLs:
 - `http://localhost:5052/health`
 - `http://localhost:5052/weather`
 - `http://localhost:5052/weather/1`
+- `http://localhost:5052/shipments`
+- `http://localhost:5052/shipments/shp_1001`

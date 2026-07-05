@@ -1,6 +1,11 @@
-# Tapir Node Swagger API
+# Tapir Node Adoption API
 
-Dependency-free Node fixture for testing Tapir against a small OpenAPI-backed service.
+Dependency-free Node fixture for testing Tapir against a realistic hand-authored OpenAPI document.
+
+The schema intentionally covers common Swagger/OpenAPI features such as reusable parameters and
+responses, API key and bearer auth, server variables, pagination envelopes, polymorphic responses,
+`oneOf`, `allOf`, discriminators, nullable fields, multipart uploads, callbacks, links, cookies,
+headers, examples, and multiple request body media types.
 
 ## Run
 
@@ -17,3 +22,5 @@ Useful URLs:
 - `http://localhost:5051/health`
 - `http://localhost:5051/animals`
 - `http://localhost:5051/animals/1`
+- `http://localhost:5051/applications`
+- `http://localhost:5051/applications/app_1001`
