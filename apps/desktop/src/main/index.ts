@@ -103,6 +103,7 @@ app.on("window-all-closed", () => {
 function registerIpc(): void {
   handle("tapir:getInitialState", async () => tapir.getInitialState());
   handle("tapir:addServer", async (input) => tapir.addServer(input));
+  handle("tapir:refreshServerSchema", async (input) => tapir.refreshServerSchema(input));
   handle("tapir:saveApiKeyHeader", async (input) => tapir.saveApiKeyHeader(input));
   handle("tapir:previewOperation", async (input) => tapir.previewOperation(input));
   handle("tapir:callOperation", async (input) => tapir.callOperation(input));

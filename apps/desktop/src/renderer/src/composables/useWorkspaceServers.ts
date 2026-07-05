@@ -34,6 +34,10 @@ export function useWorkspaceServers(setErrorMessage: (message: string) => void) 
     servers.value = [server, ...servers.value];
   }
 
+  function updateServer(server: ServerWithDefinition): void {
+    servers.value = servers.value.map((item) => item.server.id === server.server.id ? server : item);
+  }
+
   function selectOperation(operation: NormalizedOperation): void {
     selectedOperationId.value = operation.operationId;
   }
@@ -55,6 +59,7 @@ export function useWorkspaceServers(setErrorMessage: (message: string) => void) 
     selectedServer,
     selectedServerId,
     servers,
+    updateServer,
     workspace
   };
 }

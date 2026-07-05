@@ -15,12 +15,15 @@ defineProps<{
 const emit = defineEmits<{
   collapse: [value: boolean];
   serverAdded: [server: ServerWithDefinition];
+  serverRefreshed: [server: ServerWithDefinition, deprecatedDraftCount: number];
   selectServer: [serverId: string];
 }>();
 
 const baseUrl = ref("");
 const errorMessage = ref("");
+const schemaMessage = ref("");
 const isAddingServer = ref(false);
+const refreshingServerIds = ref(new Set<string>());
 
 async function addServer(): Promise<void> {
   errorMessage.value = "";
@@ -37,6 +40,28 @@ async function addServer(): Promise<void> {
     errorMessage.value = toErrorMessage(error);
   } finally {
     isAddingServer.value = false;
+  }
+}
+
+async function refreshServer(serverId: string): Promise<void> {
+  errorMessage.value = "";
+  schemaMessage.value = "";
+  const tapir = getTapirBridge();
+  if (!tapir) return;
+  refreshingServerIds.value = new Set([...refreshingServerIds.value, serverId]);
+  try {
+    const result = await tapir.refreshServerSchema(serverId);
+    const server = { server: result.server, definition: result.normalized };
+    emit("serverRefreshed", server, result.deprecatedDrafts.length);
+    schemaMessage.value = result.deprecatedDrafts.length > 0
+      ? `Schema refreshed. ${result.deprecatedDrafts.length} saved request${result.deprecatedDrafts.length === 1 ? "" : "s"} moved to Custom.`
+      : "Schema refreshed.";
+  } catch (error) {
+    errorMessage.value = toErrorMessage(error);
+  } finally {
+    const next = new Set(refreshingServerIds.value);
+    next.delete(serverId);
+    refreshingServerIds.value = next;
   }
 }
 
@@ -80,20 +105,23 @@ function toErrorMessage(error: unknown): string {
       </form>
 
       <p v-if="errorMessage" class="my-2.5 rounded-md border border-[#7a352f] bg-[#2b1717] p-2.5 text-[13px] text-[#ffb7aa]">{{ errorMessage }}</p>
+      <p v-if="schemaMessage" class="my-2.5 rounded-md border border-[#2d6b5c] bg-[#14251f] p-2.5 text-[13px] text-[#a7ead2]">{{ schemaMessage }}</p>
 
       <div class="grid gap-2.5">
-        <button
+        <div
           v-for="item in servers"
           :key="item.server.id"
-          :class="[itemClass, item.server.id === selectedServerId && activeItemClass]"
-          @click="emit('selectServer', item.server.id)"
+          :class="[itemClass, 'grid-cols-[17px_minmax(0,1fr)_28px]', item.server.id === selectedServerId && activeItemClass]"
         >
           <Server :size="17" />
-          <span class="grid min-w-0 gap-[3px]">
+          <button class="grid min-w-0 gap-[3px] text-left" @click="emit('selectServer', item.server.id)">
             <strong class="truncate">{{ item.server.name }}</strong>
             <small class="truncate text-[#97a3ac]">{{ item.server.baseUrl }}</small>
-          </span>
-        </button>
+          </button>
+          <button class="grid size-7 place-items-center rounded-md text-[#97a3ac] transition hover:bg-[#232a31] hover:text-white disabled:cursor-not-allowed disabled:opacity-60" title="Refresh OpenAPI schema" :disabled="refreshingServerIds.has(item.server.id)" @click="refreshServer(item.server.id)">
+            <RefreshCw :size="15" :class="refreshingServerIds.has(item.server.id) && 'animate-spin'" />
+          </button>
+        </div>
       </div>
     </template>
   </aside>

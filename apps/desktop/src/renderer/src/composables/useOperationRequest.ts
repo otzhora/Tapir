@@ -38,6 +38,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   const previewByDraftId = reactive<Record<string, PreparedOperationRequest | null>>({});
   const sendingByDraftId = reactive<Record<string, boolean>>({});
   const previewingByDraftId = reactive<Record<string, boolean>>({});
+  const automaticDraftBySpace: Record<string, Promise<RequestDraft | null> | undefined> = {};
   const activeRequestTab = ref<RequestTab>("params");
 
   const isCustomSpace = computed(() => input.selectedOperationId.value === CUSTOM_OPERATION_ID);
@@ -71,7 +72,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     { id: "params", label: activeDraft.value?.sourceType === "custom" ? "Query" : "Params", count: enabledParameters(activeDraft.value).length },
     { id: "auth", label: "Headers", count: enabledHeaders(activeDraft.value).length },
     ...(showBodyTab.value ? [{ id: "body" as const, label: "Body", count: selectedContentTypes.value.length }] : []),
-    { id: "schema", label: "OpenAPI" },
+    ...(activeDraft.value?.sourceType === "openapi" ? [{ id: "schema" as const, label: "OpenAPI" }] : []),
     { id: "preview", label: "Preview" }
   ]);
 
@@ -88,6 +89,10 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     void refreshPreview(draft);
   });
 
+  watch(requestTabs, (tabs) => {
+    if (!tabs.some((tab) => tab.id === activeRequestTab.value)) activeRequestTab.value = "params";
+  });
+
   watch(() => [input.selectedServer.value?.server.id, input.selectedOperationId.value, input.selectedOperation.value?.operationId], () => {
     void ensureActiveSpaceHasDraft();
   });
@@ -102,11 +107,27 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   async function ensureActiveSpaceHasDraft(): Promise<void> {
     if (!input.selectedServer.value) return;
     if (isCustomSpace.value) {
-      if (visibleDrafts.value.length === 0) await createCustomRequest();
+      if (visibleDrafts.value.length === 0) await createAutomaticDraft(activeSpaceKey.value, createCustomRequest);
       return;
     }
     if (!input.selectedOperation.value) return;
-    if (visibleDrafts.value.length === 0) await createOpenApiRequest(input.selectedOperation.value);
+    if (visibleDrafts.value.length === 0) {
+      const operation = input.selectedOperation.value;
+      await createAutomaticDraft(activeSpaceKey.value, () => createOpenApiRequest(operation));
+    }
+  }
+
+  async function createAutomaticDraft(spaceKey: string, createDraft: () => Promise<RequestDraft | null>): Promise<RequestDraft | null> {
+    if (automaticDraftBySpace[spaceKey]) return automaticDraftBySpace[spaceKey] ?? null;
+    automaticDraftBySpace[spaceKey] = (async () => {
+      const draft = await createDraft();
+      return draft;
+    })();
+    try {
+      return await automaticDraftBySpace[spaceKey] ?? null;
+    } finally {
+      delete automaticDraftBySpace[spaceKey];
+    }
   }
 
   async function createOpenApiRequest(operation: NormalizedOperation): Promise<RequestDraft | null> {

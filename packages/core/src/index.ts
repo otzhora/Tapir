@@ -148,6 +148,8 @@ export interface RequestDraft {
   serverInstanceId: string | null;
   sourceType: RequestDraftSourceType;
   operationId: string | null;
+  deprecatedAt: string | null;
+  deprecationReason: string | null;
   name: string;
   isNameManual: boolean;
   method: HttpMethod;
@@ -186,6 +188,7 @@ export interface CallHistoryEntry {
 export interface ServerRepository {
   create(input: Omit<ServerInstance, "createdAt" | "updatedAt">): Promise<ServerInstance>;
   list(workspaceId: string): Promise<ServerInstance[]>;
+  updateAfterDefinitionRefresh(serverId: string, input: { name: string; specUrl: string; sourceId: string }): Promise<ServerInstance>;
   updateDefinitionSource(serverId: string, sourceId: string): Promise<void>;
 }
 

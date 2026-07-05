@@ -74,6 +74,7 @@ function checkedValue(event: Event): boolean {
           @click="emit('selectDraft', draft.id)"
         >
           <span class="truncate">{{ draft.name }}</span>
+          <span v-if="draft.deprecatedAt" class="rounded bg-[#4a2a19] px-1.5 py-0.5 text-[10px] font-black uppercase text-[#ffc48a]">Deprecated</span>
           <X :size="14" class="shrink-0 text-[#7f8b94] hover:text-white" @click.stop="emit('closeDraft', draft.id)" />
         </button>
         <button class="mb-1 grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#9faab2] transition hover:bg-[#232a31] hover:text-white" title="New request tab" @click="emit('createDraft')">
@@ -109,8 +110,12 @@ function checkedValue(event: Event): boolean {
 
           <div class="grid gap-2 text-[13px] text-[#97a3ac] md:grid-cols-3">
             <span class="truncate">Name: <strong class="text-[#d4ddd9]">{{ activeDraft.name }}</strong></span>
-            <span class="truncate">Source: <strong class="text-[#d4ddd9]">{{ isCustomSpace ? "Custom" : "OpenAPI" }}</strong></span>
+            <span class="truncate">Source: <strong class="text-[#d4ddd9]">{{ activeDraft.deprecatedAt ? "Deprecated custom" : isCustomSpace ? "Custom" : "OpenAPI" }}</strong></span>
             <span class="truncate">Server: <strong class="text-[#d4ddd9]">{{ selectedServer.server.name }}</strong></span>
+          </div>
+          <div v-if="activeDraft.deprecatedAt" class="flex items-start gap-2 rounded-md border border-[#7a5523] bg-[#2b2115] p-3 text-[13px] font-bold text-[#ffd69a]">
+            <AlertCircle :size="16" class="mt-0.5 shrink-0" />
+            <span>{{ activeDraft.deprecationReason || "This request was moved to Custom because its OpenAPI operation changed." }}</span>
           </div>
         </header>
 

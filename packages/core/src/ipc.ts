@@ -31,6 +31,16 @@ export interface AddServerResponse {
   normalized: NormalizedApiDefinition;
 }
 
+export interface RefreshServerSchemaRequest {
+  serverId: string;
+}
+
+export interface RefreshServerSchemaResponse {
+  server: ServerInstance;
+  normalized: NormalizedApiDefinition;
+  deprecatedDrafts: RequestDraft[];
+}
+
 export interface SaveApiKeyHeaderRequest {
   serverId: string;
   headerName: string;
@@ -113,6 +123,10 @@ export interface TapirIpcContract {
   "tapir:addServer": {
     request: AddServerRequest;
     response: AddServerResponse;
+  };
+  "tapir:refreshServerSchema": {
+    request: RefreshServerSchemaRequest;
+    response: RefreshServerSchemaResponse;
   };
   "tapir:saveApiKeyHeader": {
     request: SaveApiKeyHeaderRequest;

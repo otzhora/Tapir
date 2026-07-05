@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from "vue";
-import type { CallHistoryEntry, NormalizedOperation } from "@tapir/core";
+import type { CallHistoryEntry, NormalizedOperation, ServerWithDefinition } from "@tapir/core";
 import AppHeader from "./components/AppHeader.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
 import OperationsPanel from "./components/OperationsPanel.vue";
@@ -82,6 +82,18 @@ async function addCustomRequest(): Promise<void> {
   await request.createCustomRequest();
 }
 
+async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCount: number): Promise<void> {
+  workspaceServers.updateServer(server);
+  await request.loadDrafts();
+  if (workspaceServers.selectedServerId.value !== server.server.id) return;
+  const selectedOperationStillExists = workspaceServers.operations.value.some((operation) => operation.operationId === workspaceServers.selectedOperationId.value);
+  if (!selectedOperationStillExists || deprecatedDraftCount > 0) {
+    workspaceServers.selectedOperationId.value = deprecatedDraftCount > 0 ? CUSTOM_OPERATION_ID : workspaceServers.operations.value[0]?.operationId ?? CUSTOM_OPERATION_ID;
+    await nextTick();
+    await request.ensureActiveSpaceHasDraft();
+  }
+}
+
 function togglePanel(panel: "servers" | "operations" | "history"): void {
   collapsedPanels[panel] = !collapsedPanels[panel];
 }
@@ -106,6 +118,7 @@ function togglePanel(panel: "servers" | "operations" | "history"): void {
         :workspace="workspaceServers.workspace.value"
         @collapse="collapsedPanels.servers = $event"
         @server-added="workspaceServers.addServer"
+        @server-refreshed="serverRefreshed"
         @select-server="workspaceServers.selectedServerId.value = $event"
       />
 

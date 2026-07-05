@@ -128,6 +128,14 @@ export async function runMigrations(db: SqliteDatabase): Promise<void> {
           "alter table call_history_entries add column request_draft_id text"
         ]),
         down: async () => undefined
+      },
+      {
+        name: "0004_request_draft_deprecation",
+        up: async ({ context }) => runTransaction(context.db, [
+          "alter table request_drafts add column deprecated_at text",
+          "alter table request_drafts add column deprecation_reason text"
+        ]),
+        down: async () => undefined
       }
     ],
     storage: new BetterSqliteUmzugStorage(db)

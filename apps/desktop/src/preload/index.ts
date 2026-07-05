@@ -21,6 +21,7 @@ function invoke<Channel extends TapirIpcChannel>(
 const api = {
   getInitialState: () => invoke("tapir:getInitialState", undefined),
   addServer: (baseUrl: string) => invoke("tapir:addServer", { baseUrl }),
+  refreshServerSchema: (serverId: string) => invoke("tapir:refreshServerSchema", { serverId }),
   saveApiKeyHeader: (input: SaveApiKeyHeaderRequest) => invoke("tapir:saveApiKeyHeader", input),
   previewOperation: (input: CallOperationRequest) => invoke("tapir:previewOperation", input),
   callOperation: (input: CallOperationRequest) => invoke("tapir:callOperation", input),

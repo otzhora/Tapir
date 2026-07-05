@@ -9,6 +9,8 @@ import type {
   ListRequestDraftsRequest,
   PreviewCustomRequestRequest,
   PreviewOperationResponse,
+  RefreshServerSchemaRequest,
+  RefreshServerSchemaResponse,
   SaveApiKeyHeaderRequest,
   UpdateRequestDraftRequest
 } from "./ipc";
@@ -21,6 +23,7 @@ import type {
   OpenApiNormalizer,
   RequestDraft,
   RequestDraftRepository,
+  RequestDraftParameter,
   ServerRepository,
   AuthProfileRepository,
   Workspace
@@ -88,6 +91,48 @@ export class TapirApplicationService {
     return { server: { ...server, apiDefinitionSourceId: source.id }, normalized };
   }
 
+  async refreshServerSchema(input: RefreshServerSchemaRequest): Promise<RefreshServerSchemaResponse> {
+    const { definitions, discovery, normalizer, requestDrafts, servers, workspace } = this.dependencies;
+    const serverInstances = await servers.list(workspace.id);
+    const server = serverInstances.find((candidate) => candidate.id === input.serverId);
+    if (!server) throw new Error("Server not found.");
+
+    const previousDefinition = await definitions.latestForServer(server.id);
+    const previousNormalized = previousDefinition ? JSON.parse(previousDefinition.normalizedJson) as NormalizedApiDefinition : null;
+    const discovered = await discovery.discover(server.baseUrl);
+    const normalized = normalizer.normalize(discovered.document);
+    const now = new Date().toISOString();
+    const sourceId = crypto.randomUUID();
+
+    await definitions.createSource({
+      id: sourceId,
+      workspaceId: workspace.id,
+      serverInstanceId: server.id,
+      sourceUrl: discovered.specUrl,
+      discoveryMethod: discovered.discoveryMethod,
+      lastFetchedAt: now
+    });
+    const refreshedServer = await servers.updateAfterDefinitionRefresh(server.id, {
+      name: normalized.name,
+      specUrl: discovered.specUrl,
+      sourceId
+    });
+    await definitions.createDefinition({
+      id: crypto.randomUUID(),
+      sourceId,
+      name: normalized.name,
+      version: normalized.version,
+      rawSpecJson: JSON.stringify(discovered.document),
+      normalizedJson: JSON.stringify(normalized),
+      fetchedAt: now
+    });
+
+    const deprecatedDrafts = previousNormalized
+      ? await this.deprecateChangedOpenApiDrafts(server, previousNormalized, normalized, now)
+      : [];
+    return { server: refreshedServer, normalized, deprecatedDrafts };
+  }
+
   async saveApiKeyHeader(input: SaveApiKeyHeaderRequest) {
     const { authProfiles, workspace } = this.dependencies;
     return authProfiles.upsertApiKeyHeader({
@@ -151,6 +196,8 @@ export class TapirApplicationService {
       serverInstanceId: input.serverId,
       sourceType: input.sourceType,
       operationId: input.operationId,
+      deprecatedAt: null,
+      deprecationReason: null,
       name: input.name,
       isNameManual: input.isNameManual ?? false,
       method: input.method,
@@ -199,4 +246,83 @@ export class TapirApplicationService {
     }
     return { request: prepared.redactedRequest, response };
   }
+
+  private async deprecateChangedOpenApiDrafts(
+    server: { id: string; baseUrl: string },
+    previous: NormalizedApiDefinition,
+    next: NormalizedApiDefinition,
+    now: string
+  ): Promise<RequestDraft[]> {
+    const drafts = await this.dependencies.requestDrafts.listForWorkspace(this.dependencies.workspace.id);
+    const nextOperations = new Map(next.operations.map((operation) => [operation.operationId, operation]));
+    const previousOperations = new Map(previous.operations.map((operation) => [operation.operationId, operation]));
+    const deprecated: RequestDraft[] = [];
+
+    for (const draft of drafts) {
+      if (draft.serverInstanceId !== server.id || draft.sourceType !== "openapi" || !draft.operationId) continue;
+      const previousOperation = previousOperations.get(draft.operationId);
+      const nextOperation = nextOperations.get(draft.operationId);
+      if (nextOperation && previousOperation && stableJson(previousOperation) === stableJson(nextOperation)) continue;
+
+      const reason = nextOperation
+        ? "The OpenAPI operation schema changed. This saved request was moved to Custom so its old inputs stay intact."
+        : "The OpenAPI operation was removed. This saved request was moved to Custom so its old inputs stay intact.";
+      const retired = await this.dependencies.requestDrafts.update({
+        ...draft,
+        sourceType: "custom",
+        operationId: null,
+        deprecatedAt: now,
+        deprecationReason: reason,
+        name: draft.isNameManual ? draft.name : `${draft.name} (deprecated)`,
+        url: customUrlFromDraft(server.baseUrl, draft),
+        parametersJson: JSON.stringify(customParametersFromDraft(draft))
+      });
+      deprecated.push(retired);
+    }
+
+    return deprecated;
+  }
+}
+
+function customUrlFromDraft(baseUrl: string, draft: RequestDraft): string {
+  if (draft.url) return draft.url;
+  let path = draft.path || "/";
+  for (const parameter of parseDraftParameters(draft).filter((item) => item.in === "path")) {
+    const token = `{${parameter.name}}`;
+    path = path.replace(token, parameter.value ? encodeURIComponent(parameter.value) : token);
+  }
+  try {
+    return new URL(path, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`).toString();
+  } catch {
+    return `${baseUrl}${path}`;
+  }
+}
+
+function customParametersFromDraft(draft: RequestDraft): RequestDraftParameter[] {
+  return parseDraftParameters(draft)
+    .filter((parameter) => parameter.in !== "path")
+    .map((parameter) => ({ ...parameter, source: "custom" }));
+}
+
+function parseDraftParameters(draft: RequestDraft): RequestDraftParameter[] {
+  try {
+    const parsed = JSON.parse(draft.parametersJson) as unknown;
+    return Array.isArray(parsed) ? parsed as RequestDraftParameter[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(sortJson(value));
+}
+
+function sortJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, sortJson(nested)])
+  );
 }

@@ -33,7 +33,8 @@ describe("SQLite storage", () => {
     expect(migrations).toEqual([
       { name: "0001_initial_schema" },
       { name: "0002_request_drafts" },
-      { name: "0003_history_request_draft_id" }
+      { name: "0003_history_request_draft_id" },
+      { name: "0004_request_draft_deprecation" }
     ]);
   });
 

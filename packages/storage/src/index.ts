@@ -83,6 +83,17 @@ export class SqliteServerRepository implements ServerRepository {
     return rows.map(mapServer);
   }
 
+  async updateAfterDefinitionRefresh(serverId: string, input: { name: string; specUrl: string; sourceId: string }): Promise<ServerInstance> {
+    this.db.prepare(`
+      update server_instances
+      set name = ?, spec_url = ?, api_definition_source_id = ?, updated_at = ?
+      where id = ?
+    `).run(input.name, input.specUrl, input.sourceId, new Date().toISOString(), serverId);
+    const row = this.db.prepare("select * from server_instances where id = ?").get(serverId) as DbServer | undefined;
+    if (!row) throw new Error("Server not found.");
+    return mapServer(row);
+  }
+
   async updateDefinitionSource(serverId: string, sourceId: string): Promise<void> {
     this.db.prepare("update server_instances set api_definition_source_id = ?, updated_at = ? where id = ?")
       .run(sourceId, new Date().toISOString(), serverId);
@@ -206,14 +217,16 @@ export class SqliteRequestDraftRepository implements RequestDraftRepository {
     const draft: RequestDraft = { ...input, createdAt: now, updatedAt: now };
     this.db.prepare(`
       insert into request_drafts
-      (id, workspace_id, server_instance_id, source_type, operation_id, name, is_name_manual, method, path, url, parameters_json, headers_json, body, content_type, sort_order, created_at, updated_at)
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, workspace_id, server_instance_id, source_type, operation_id, deprecated_at, deprecation_reason, name, is_name_manual, method, path, url, parameters_json, headers_json, body, content_type, sort_order, created_at, updated_at)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       draft.id,
       draft.workspaceId,
       draft.serverInstanceId,
       draft.sourceType,
       draft.operationId,
+      draft.deprecatedAt,
+      draft.deprecationReason,
       draft.name,
       draft.isNameManual ? 1 : 0,
       draft.method,
@@ -237,6 +250,8 @@ export class SqliteRequestDraftRepository implements RequestDraftRepository {
       set server_instance_id = ?,
           source_type = ?,
           operation_id = ?,
+          deprecated_at = ?,
+          deprecation_reason = ?,
           name = ?,
           is_name_manual = ?,
           method = ?,
@@ -253,6 +268,8 @@ export class SqliteRequestDraftRepository implements RequestDraftRepository {
       draft.serverInstanceId,
       draft.sourceType,
       draft.operationId,
+      draft.deprecatedAt,
+      draft.deprecationReason,
       draft.name,
       draft.isNameManual ? 1 : 0,
       draft.method,
@@ -292,6 +309,8 @@ type DbRequestDraft = {
   server_instance_id: string | null;
   source_type: "openapi" | "custom";
   operation_id: string | null;
+  deprecated_at: string | null;
+  deprecation_reason: string | null;
   name: string;
   is_name_manual: number;
   method: RequestDraft["method"];
@@ -337,6 +356,8 @@ function mapRequestDraft(row: DbRequestDraft): RequestDraft {
     serverInstanceId: row.server_instance_id,
     sourceType: row.source_type,
     operationId: row.operation_id,
+    deprecatedAt: row.deprecated_at,
+    deprecationReason: row.deprecation_reason,
     name: row.name,
     isNameManual: Boolean(row.is_name_manual),
     method: row.method,
