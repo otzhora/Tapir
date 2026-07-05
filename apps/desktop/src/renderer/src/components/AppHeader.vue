@@ -17,13 +17,13 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <header class="app-titlebar grid h-11 shrink-0 grid-cols-[auto_1fr_auto] items-center border-b border-[#252d35] bg-[#151a20] text-[13px] text-[#cbd4d0] shadow-[0_1px_0_rgba(255,255,255,0.03)]">
+  <header class="app-titlebar grid h-11 shrink-0 grid-cols-[auto_1fr_auto] items-center border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-panel-strong)] text-[13px] text-[var(--tapir-text-soft)] shadow-[var(--tapir-header-shadow)]">
     <div class="flex min-w-0 items-center gap-2 px-3">
-      <div class="grid size-6 shrink-0 place-items-center rounded-md border border-[#35414b] bg-[#20272e] text-[#1fc294] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+      <div class="grid size-6 shrink-0 place-items-center rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-control-hover)] text-[var(--tapir-accent)] shadow-[var(--tapir-icon-inset-shadow)]">
         <Sparkles :size="14" />
       </div>
-      <strong class="truncate text-[14px] text-[#f3f7f5]">Tapir</strong>
-      <span class="h-4 w-px bg-[#303943]"></span>
+      <strong class="truncate text-[14px] text-[var(--tapir-text-strong)]">Tapir</strong>
+      <span class="h-4 w-px bg-[var(--tapir-border-control)]"></span>
       <button class="chrome-button" :class="!collapsedPanels.servers && 'is-active'" title="Toggle servers" @click="emit('togglePanel', 'servers')">
         <PanelLeft :size="15" />
         <span>Servers</span>
@@ -38,10 +38,10 @@ const emit = defineEmits<{
       </button>
     </div>
 
-    <div class="mx-auto flex max-w-[680px] min-w-0 items-center justify-center gap-2 px-3 text-[#97a3ac]">
-      <Server :size="15" class="shrink-0 text-[#1fc294]" />
-      <span class="truncate text-[#e5ebe8]">{{ selectedServer?.server.name ?? workspace?.name ?? "Local Workspace" }}</span>
-      <span class="hidden truncate text-[#97a3ac] lg:inline">{{ selectedServer?.server.baseUrl ?? "Add an OpenAPI server to begin" }}</span>
+    <div class="mx-auto flex max-w-[680px] min-w-0 items-center justify-center gap-2 px-3 text-[var(--tapir-text-muted)]">
+      <Server :size="15" class="shrink-0 text-[var(--tapir-accent)]" />
+      <span class="truncate text-[var(--tapir-text)]">{{ selectedServer?.server.name ?? workspace?.name ?? "Local Workspace" }}</span>
+      <span class="hidden truncate text-[var(--tapir-text-muted)] lg:inline">{{ selectedServer?.server.baseUrl ?? "Add an OpenAPI server to begin" }}</span>
     </div>
 
     <div class="mr-[138px] flex items-center justify-end gap-2 px-3">

@@ -100,7 +100,7 @@ function togglePanel(panel: "servers" | "operations" | "history"): void {
 </script>
 
 <template>
-  <div class="flex h-screen min-w-0 flex-col overflow-hidden bg-[#0b0e12] text-[#e5ebe8]">
+  <div class="flex h-screen min-w-0 flex-col overflow-hidden bg-[var(--tapir-bg)] text-[var(--tapir-text)]">
     <AppHeader
       :collapsed-panels="collapsedPanels"
       :operations-count="workspaceServers.operations.value.length"
@@ -110,7 +110,7 @@ function togglePanel(panel: "servers" | "operations" | "history"): void {
       @toggle-panel="togglePanel"
     />
 
-    <main :class="['app-shell grid min-h-0 flex-1 bg-[#0b0e12] text-[#e5ebe8]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-columns] duration-300 ease-out']" :style="shellStyle">
+    <main :class="['app-shell grid min-h-0 flex-1 text-[var(--tapir-text)]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-columns] duration-300 ease-out']" :style="shellStyle">
       <ServersPanel
         :collapsed="collapsedPanels.servers"
         :selected-server-id="workspaceServers.selectedServerId.value"
@@ -139,7 +139,7 @@ function togglePanel(panel: "servers" | "operations" | "history"): void {
 
       <div class="resize-handle" title="Drag to resize operations" @mousedown="startColumnResize('operations', $event)"></div>
 
-      <section :class="['grid min-w-0 overflow-hidden bg-[#0e1217]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-rows] duration-300 ease-out']" :style="responseStyle">
+      <section :class="['grid min-w-0 overflow-hidden bg-[var(--tapir-bg-panel-soft)] backdrop-blur-xl', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-rows] duration-300 ease-out']" :style="responseStyle">
         <RequestWorkspace
           :active-draft="request.activeDraft.value"
           :active-request-tab="request.activeRequestTab.value"

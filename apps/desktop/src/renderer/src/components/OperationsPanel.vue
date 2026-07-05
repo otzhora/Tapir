@@ -2,7 +2,7 @@
 import { ChevronLeft, ListFilter, Plus, TerminalSquare } from "lucide-vue-next";
 import type { NormalizedOperation, ServerWithDefinition } from "@tapir/core";
 import { CUSTOM_OPERATION_ID } from "../composables/useOperationRequest";
-import { activeItemClass, eyebrowClass, itemClass, panelClass } from "../uiClasses";
+import { activeItemClass, eyebrowClass, iconButtonClass, itemClass, mutedTextClass, panelClass, subtleTextClass, softTextClass } from "../uiClasses";
 import MethodBadge from "./MethodBadge.vue";
 
 defineProps<{
@@ -24,7 +24,7 @@ const emit = defineEmits<{
 
 <template>
   <section :class="[panelClass, collapsed && 'overflow-hidden px-2']">
-    <button v-if="collapsed" class="grid h-full w-full place-items-start pt-3 text-[#97a3ac]" title="Expand operations" @click="emit('collapse', false)">
+    <button v-if="collapsed" :class="['grid h-full w-full place-items-start pt-3', mutedTextClass]" title="Expand operations" @click="emit('collapse', false)">
       <ListFilter :size="20" />
     </button>
     <template v-else>
@@ -32,7 +32,7 @@ const emit = defineEmits<{
         <span>Operations</span>
         <span class="inline-flex items-center gap-2">
           <strong>{{ operationsCount }}</strong>
-          <button class="rounded-md p-1.5 text-[#97a3ac] transition hover:bg-[#232a31] hover:text-white" title="Collapse operations" @click="emit('collapse', true)">
+          <button :class="iconButtonClass" title="Collapse operations" @click="emit('collapse', true)">
             <ChevronLeft :size="17" />
           </button>
         </span>
@@ -45,22 +45,22 @@ const emit = defineEmits<{
 
       <template v-else>
         <div class="grid gap-2.5">
-          <h2 class="mb-0.5 mt-1 text-xs font-bold uppercase text-[#7f8b94]">Custom</h2>
+          <h2 :class="['mb-0.5 mt-1 text-xs font-bold uppercase', subtleTextClass]">Custom</h2>
           <button
             :class="[itemClass, selectedOperationId === CUSTOM_OPERATION_ID && activeItemClass]"
             @click="emit('selectCustom')"
           >
-            <span class="grid h-7 w-14 place-items-center rounded bg-[#26313a] text-[11px] font-black text-[#dce6e2]">HTTP</span>
+            <span :class="['grid h-7 w-14 place-items-center rounded bg-[var(--tapir-bg-control-hover)] text-[11px] font-black', softTextClass]">HTTP</span>
             <span class="grid min-w-0 gap-[3px]">
               <strong class="truncate">Custom requests</strong>
-              <small class="truncate text-[#97a3ac]">Any method, URL, and headers</small>
+              <small :class="['truncate', mutedTextClass]">Any method, URL, and headers</small>
             </span>
-            <Plus :size="16" class="ml-auto shrink-0 text-[#97a3ac] hover:text-white" @click.stop="emit('addCustomRequest')" />
+            <Plus :size="16" :class="['ml-auto shrink-0 hover:text-[var(--tapir-text-strong)]', mutedTextClass]" @click.stop="emit('addCustomRequest')" />
           </button>
         </div>
 
         <div v-for="group in groupedOperations" :key="group.name" class="grid gap-2.5">
-          <h2 class="mb-0.5 mt-4 text-xs font-bold uppercase text-[#7f8b94]">{{ group.name }}</h2>
+          <h2 :class="['mb-0.5 mt-4 text-xs font-bold uppercase', subtleTextClass]">{{ group.name }}</h2>
           <button
             v-for="operation in group.items"
             :key="operation.operationId"
@@ -70,9 +70,9 @@ const emit = defineEmits<{
             <MethodBadge :method="operation.method" />
             <span class="grid min-w-0 gap-[3px]">
               <strong class="truncate">{{ operation.summary || operation.operationId }}</strong>
-              <small class="truncate text-[#97a3ac]">{{ operation.path }}</small>
+              <small :class="['truncate', mutedTextClass]">{{ operation.path }}</small>
             </span>
-            <Plus :size="16" class="ml-auto shrink-0 text-[#97a3ac] hover:text-white" @click.stop="emit('addOperationRequest', operation)" />
+            <Plus :size="16" :class="['ml-auto shrink-0 hover:text-[var(--tapir-text-strong)]', mutedTextClass]" @click.stop="emit('addOperationRequest', operation)" />
           </button>
         </div>
       </template>

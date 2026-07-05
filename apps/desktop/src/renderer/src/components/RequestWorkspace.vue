@@ -2,7 +2,7 @@
 import { AlertCircle, Clipboard, Database, Eye, FileJson2, Plus, Send, TerminalSquare, X } from "lucide-vue-next";
 import type { NormalizedOperation, PreparedOperationRequest, RequestDraft, RequestDraftHeader, RequestDraftParameter, ServerWithDefinition } from "@tapir/core";
 import type { RequestTab, RequestTabItem } from "../types";
-import { eyebrowClass, fieldClass } from "../uiClasses";
+import { eyebrowClass, fieldClass, iconButtonClass, mutedTextClass, primaryActionClass, softTextClass, strongTextClass } from "../uiClasses";
 import MethodBadge from "./MethodBadge.vue";
 
 defineProps<{
@@ -63,9 +63,9 @@ function checkedValue(event: Event): boolean {
 </script>
 
 <template>
-  <div class="min-h-0 overflow-auto bg-[#10151b]">
+  <div class="min-h-0 overflow-auto bg-[var(--tapir-bg-panel-soft)] backdrop-blur-xl">
     <div v-if="selectedServer && (selectedOperation || isCustomSpace)" class="grid min-h-full grid-rows-[auto_1fr]">
-      <nav class="flex min-w-0 items-center gap-1 overflow-x-auto border-b border-[#252d35] bg-[#0d1116] px-3 pt-2">
+      <nav class="flex min-w-0 items-center gap-1 overflow-x-auto border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-field)] px-3 pt-2 backdrop-blur-xl">
         <button
           v-for="draft in draftTabs"
           :key="draft.id"
@@ -74,52 +74,52 @@ function checkedValue(event: Event): boolean {
           @click="emit('selectDraft', draft.id)"
         >
           <span class="truncate">{{ draft.name }}</span>
-          <span v-if="draft.deprecatedAt" class="rounded bg-[#4a2a19] px-1.5 py-0.5 text-[10px] font-black uppercase text-[#ffc48a]">Deprecated</span>
-          <X :size="14" class="shrink-0 text-[#7f8b94] hover:text-white" @click.stop="emit('closeDraft', draft.id)" />
+          <span v-if="draft.deprecatedAt" class="rounded bg-[var(--tapir-warning-bg)] px-1.5 py-0.5 text-[10px] font-black uppercase text-[var(--tapir-warning)]">Deprecated</span>
+          <X :size="14" class="shrink-0 text-[var(--tapir-text-subtle)] hover:text-[var(--tapir-text-strong)]" @click.stop="emit('closeDraft', draft.id)" />
         </button>
-        <button class="mb-1 grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#9faab2] transition hover:bg-[#232a31] hover:text-white" title="New request tab" @click="emit('createDraft')">
+        <button :class="['mb-1 grid h-8 w-8 shrink-0 place-items-center', iconButtonClass]" title="New request tab" @click="emit('createDraft')">
           <Plus :size="17" />
         </button>
       </nav>
 
-      <section v-if="activeDraft" class="grid min-h-full grid-rows-[auto_auto_1fr] bg-[#10151b]">
-        <header class="grid gap-3 border-b border-[#252d35] bg-[#141a20] px-4 py-3 shadow-[inset_0_-1px_0_rgba(255,255,255,0.02)]">
+      <section v-if="activeDraft" class="grid min-h-full grid-rows-[auto_auto_1fr] bg-transparent">
+        <header class="grid gap-3 border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-panel-strong)] px-4 py-3 shadow-[var(--tapir-inset-header-shadow)] backdrop-blur-xl">
           <div class="flex min-w-0 items-center justify-between gap-4">
             <div class="grid min-w-0 gap-2">
               <div class="flex min-w-0 items-center gap-2.5">
                 <MethodBadge v-if="!isCustomSpace && selectedOperation" :method="selectedOperation.method" />
-                <select v-else :value="activeDraft.method" class="h-9 rounded-md border border-[#303943] bg-[#0d1116] px-2 text-[13px] font-black text-[#f3f7f5] outline-none" @change="emit('updateMethod', inputValue($event))">
+                <select v-else :value="activeDraft.method" class="h-9 rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)] px-2 text-[13px] font-black text-[var(--tapir-text-strong)] outline-none" @change="emit('updateMethod', inputValue($event))">
                   <option v-for="method in methods" :key="method" :value="method">{{ method }}</option>
                 </select>
-                <input class="min-w-0 bg-transparent text-[18px] font-bold text-[#f3f7f5] outline-none [overflow-wrap:anywhere]" :value="activeDraft.name" @input="emit('updateDraftName', inputValue($event))" />
+                <input :class="['min-w-0 bg-transparent text-[18px] font-bold outline-none [overflow-wrap:anywhere]', strongTextClass]" :value="activeDraft.name" @input="emit('updateDraftName', inputValue($event))" />
               </div>
-              <p v-if="selectedOperation && !isCustomSpace" class="m-0 max-w-[900px] text-[13px] text-[#9faab2]">{{ selectedOperation.description || selectedOperation.path }}</p>
-              <p v-else class="m-0 max-w-[900px] text-[13px] text-[#9faab2]">Custom request</p>
+              <p v-if="selectedOperation && !isCustomSpace" :class="['m-0 max-w-[900px] text-[13px]', mutedTextClass]">{{ selectedOperation.description || selectedOperation.path }}</p>
+              <p v-else :class="['m-0 max-w-[900px] text-[13px]', mutedTextClass]">Custom request</p>
             </div>
-            <button class="inline-flex h-10 min-w-[104px] shrink-0 items-center justify-center gap-2 rounded-md bg-[#267fe6] px-3.5 font-extrabold text-white shadow-[0_10px_22px_rgba(38,127,230,0.14)] transition hover:bg-[#388df0] disabled:cursor-not-allowed disabled:opacity-60" :disabled="!canSend" @click="emit('callOperation')">
+            <button :class="[primaryActionClass, 'h-10 min-w-[104px] shrink-0 px-3.5 shadow-[var(--tapir-primary-shadow)]']" :disabled="!canSend" @click="emit('callOperation')">
               <Send :size="17" />
               {{ isSending ? "Sending" : "Send" }}
             </button>
           </div>
 
-          <div class="grid grid-cols-[minmax(96px,128px)_1fr] overflow-hidden rounded-md border border-[#303943] bg-[#0d1116]">
-            <div class="grid place-items-center border-r border-[#303943] px-3 font-black text-[#49d9ae]">{{ activeDraft.method }}</div>
-            <input v-if="isCustomSpace" class="h-11 min-w-0 bg-transparent px-3 text-[#f3f7f5] outline-none" :value="activeDraft.url" placeholder="https://api.example.com/resource" @input="emit('updateUrl', inputValue($event))" />
-            <input v-else class="h-11 min-w-0 bg-transparent px-3 text-[#f3f7f5] outline-none" :value="operationUrl" readonly />
+          <div class="grid grid-cols-[minmax(96px,128px)_1fr] overflow-hidden rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)]">
+            <div class="grid place-items-center border-r border-[var(--tapir-border-control)] px-3 font-black text-[var(--tapir-accent)]">{{ activeDraft.method }}</div>
+            <input v-if="isCustomSpace" class="h-11 min-w-0 bg-transparent px-3 text-[var(--tapir-text-strong)] outline-none" :value="activeDraft.url" placeholder="https://api.example.com/resource" @input="emit('updateUrl', inputValue($event))" />
+            <input v-else class="h-11 min-w-0 bg-transparent px-3 text-[var(--tapir-text-strong)] outline-none" :value="operationUrl" readonly />
           </div>
 
-          <div class="grid gap-2 text-[13px] text-[#97a3ac] md:grid-cols-3">
-            <span class="truncate">Name: <strong class="text-[#d4ddd9]">{{ activeDraft.name }}</strong></span>
-            <span class="truncate">Source: <strong class="text-[#d4ddd9]">{{ activeDraft.deprecatedAt ? "Deprecated custom" : isCustomSpace ? "Custom" : "OpenAPI" }}</strong></span>
-            <span class="truncate">Server: <strong class="text-[#d4ddd9]">{{ selectedServer.server.name }}</strong></span>
+          <div :class="['grid gap-2 text-[13px] md:grid-cols-3', mutedTextClass]">
+            <span class="truncate">Name: <strong :class="softTextClass">{{ activeDraft.name }}</strong></span>
+            <span class="truncate">Source: <strong :class="softTextClass">{{ activeDraft.deprecatedAt ? "Deprecated custom" : isCustomSpace ? "Custom" : "OpenAPI" }}</strong></span>
+            <span class="truncate">Server: <strong :class="softTextClass">{{ selectedServer.server.name }}</strong></span>
           </div>
-          <div v-if="activeDraft.deprecatedAt" class="flex items-start gap-2 rounded-md border border-[#7a5523] bg-[#2b2115] p-3 text-[13px] font-bold text-[#ffd69a]">
+          <div v-if="activeDraft.deprecatedAt" class="flex items-start gap-2 rounded-md border border-[var(--tapir-warning-border)] bg-[var(--tapir-warning-bg)] p-3 text-[13px] font-bold text-[var(--tapir-warning)]">
             <AlertCircle :size="16" class="mt-0.5 shrink-0" />
             <span>{{ activeDraft.deprecationReason || "This request was moved to Custom because its OpenAPI operation changed." }}</span>
           </div>
         </header>
 
-        <nav class="flex min-w-0 gap-1 overflow-x-auto border-b border-[#252d35] bg-[#10151b] px-3">
+        <nav class="flex min-w-0 gap-1 overflow-x-auto border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-panel-muted)] px-3 backdrop-blur-xl">
           <button
             v-for="tab in requestTabs"
             :key="tab.id"
@@ -128,11 +128,11 @@ function checkedValue(event: Event): boolean {
             @click="emit('updateActiveRequestTab', tab.id)"
           >
             {{ tab.label }}
-            <span v-if="tab.count !== undefined" class="rounded bg-[#26313a] px-1.5 py-0.5 text-[11px] text-[#aeb8be]">{{ tab.count }}</span>
+            <span v-if="tab.count !== undefined" class="rounded bg-[var(--tapir-bg-control-hover)] px-1.5 py-0.5 text-[11px] text-[var(--tapir-text-soft)]">{{ tab.count }}</span>
           </button>
         </nav>
 
-        <section v-if="validationIssues.length > 0" class="mx-4 mt-4 grid gap-2 rounded-md border border-[#7a352f] bg-[#2b1717] p-3 text-[#ffb7aa]">
+        <section v-if="validationIssues.length > 0" class="mx-4 mt-4 grid gap-2 rounded-md border border-[var(--tapir-danger-border)] bg-[var(--tapir-danger-bg)] p-3 text-[var(--tapir-danger)]">
           <div v-for="issue in validationIssues" :key="`${issue.field}:${issue.message}`" class="flex items-start gap-2 text-[13px] font-bold">
             <AlertCircle :size="16" class="mt-0.5 shrink-0" />
             <span>{{ issue.message }}</span>
@@ -158,18 +158,18 @@ function checkedValue(event: Event): boolean {
                     <input v-if="parameter.source === 'custom'" :value="parameter.name" :class="fieldClass" placeholder="name" @input="emit('updateParameterName', parameter.id, inputValue($event))" />
                     <template v-else>
                       <strong>{{ parameter.name }}</strong>
-                      <small v-if="parameter.required" class="ml-2 text-[#ffd166]">required</small>
-                      <p v-if="parameter.description" class="mt-1 text-[#97a3ac]">{{ parameter.description }}</p>
+                      <small v-if="parameter.required" class="ml-2 text-[var(--tapir-warning)]">required</small>
+                      <p v-if="parameter.description" :class="['mt-1', mutedTextClass]">{{ parameter.description }}</p>
                     </template>
                   </div>
-                  <div class="table-cell text-[#9faab2]">{{ parameter.in }}</div>
+                  <div :class="['table-cell', mutedTextClass]">{{ parameter.in }}</div>
                   <div class="table-cell"><input :value="parameter.value" :class="fieldClass" :placeholder="parameter.name" @input="emit('setParameter', parameter.id, inputValue($event))" /></div>
                   <div class="table-cell">
                     <button v-if="parameter.source === 'custom'" class="icon-button" title="Remove parameter" @click="emit('removeParameter', parameter.id)"><X :size="15" /></button>
                   </div>
                 </template>
               </template>
-              <div v-else class="col-span-5 grid min-h-[130px] place-items-center text-[#97a3ac]">No parameters yet.</div>
+              <div v-else :class="['col-span-5 grid min-h-[130px] place-items-center', mutedTextClass]">No parameters yet.</div>
             </div>
           </section>
 
@@ -190,42 +190,42 @@ function checkedValue(event: Event): boolean {
                   <div class="table-cell"><button class="icon-button" title="Remove header" @click="emit('removeHeader', header.id)"><X :size="15" /></button></div>
                 </template>
               </template>
-              <div v-else class="col-span-4 grid min-h-[130px] place-items-center text-[#97a3ac]">No custom headers yet.</div>
+              <div v-else :class="['col-span-4 grid min-h-[130px] place-items-center', mutedTextClass]">No custom headers yet.</div>
             </div>
           </section>
 
           <section v-else-if="activeRequestTab === 'body'" class="grid gap-3">
             <div class="flex items-center justify-between gap-3">
               <span :class="eyebrowClass">Body</span>
-              <select :value="activeDraft.contentType" class="h-9 min-w-[190px] rounded-md border border-[#303943] bg-[#0d1116] px-2 text-[13px] font-bold text-[#f3f7f5] outline-none" @change="emit('updateContentType', inputValue($event))">
+              <select :value="activeDraft.contentType" class="h-9 min-w-[190px] rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)] px-2 text-[13px] font-bold text-[var(--tapir-text-strong)] outline-none" @change="emit('updateContentType', inputValue($event))">
                 <option v-if="selectedContentTypes.length === 0" value="application/json">application/json</option>
                 <option v-for="type in selectedContentTypes" :key="type" :value="type">{{ type }}</option>
               </select>
             </div>
-            <textarea :value="activeDraft.body" class="min-h-[190px] w-full min-w-0 resize-y rounded-md border border-[#303943] bg-[#0d1116] p-3 font-mono text-[13px] leading-6 text-[#f3f7f5] outline-none transition placeholder:text-[#65717b] focus:border-[#1fc294] focus:shadow-[0_0_0_2px_rgba(31,194,148,0.14)]" spellcheck="false" placeholder="{ }" @input="emit('updateBodyValue', inputValue($event))"></textarea>
+            <textarea :value="activeDraft.body" class="min-h-[190px] w-full min-w-0 resize-y rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)] p-3 font-mono text-[13px] leading-6 text-[var(--tapir-text-strong)] outline-none transition placeholder:text-[var(--tapir-text-subtle)] focus:border-[var(--tapir-accent)] focus:shadow-[0_0_0_2px_var(--tapir-focus-ring)]" spellcheck="false" placeholder="{ }" @input="emit('updateBodyValue', inputValue($event))"></textarea>
           </section>
 
           <section v-else-if="activeRequestTab === 'schema'" class="grid gap-3 lg:grid-cols-2">
             <div class="min-w-0">
-              <div class="mb-2 flex items-center gap-2 text-sm font-bold text-[#cfd8d5]"><FileJson2 :size="17" /> Request schema</div>
+              <div :class="['mb-2 flex items-center gap-2 text-sm font-bold', softTextClass]"><FileJson2 :size="17" /> Request schema</div>
               <pre class="code-block">{{ requestBodySchema }}</pre>
             </div>
             <div class="min-w-0">
-              <div class="mb-2 flex items-center gap-2 text-sm font-bold text-[#cfd8d5]"><Database :size="17" /> Responses</div>
+              <div :class="['mb-2 flex items-center gap-2 text-sm font-bold', softTextClass]"><Database :size="17" /> Responses</div>
               <pre class="code-block">{{ responsesSchema }}</pre>
             </div>
           </section>
 
           <section v-else class="grid gap-3">
             <div class="mb-1 flex items-center justify-between gap-3">
-              <div class="flex items-center gap-2 text-sm font-bold text-[#cfd8d5]"><Eye :size="17" /> Prepared request</div>
+              <div :class="['flex items-center gap-2 text-sm font-bold', softTextClass]"><Eye :size="17" /> Prepared request</div>
               <button class="mini-button" :disabled="!curlCommand" title="Copy cURL" @click="emit('copyCurl')">
                 <Clipboard :size="15" />
                 cURL
               </button>
             </div>
             <pre v-if="requestPreview" class="code-block min-h-[190px]">{{ prettyRequest }}</pre>
-            <div v-else class="empty-state min-h-[190px] rounded-md border border-[#303943]">{{ isPreviewing ? "Preparing request..." : "Complete the request fields to preview it." }}</div>
+            <div v-else class="empty-state min-h-[190px] rounded-md border border-[var(--tapir-border-control)]">{{ isPreviewing ? "Preparing request..." : "Complete the request fields to preview it." }}</div>
           </section>
         </div>
       </section>
