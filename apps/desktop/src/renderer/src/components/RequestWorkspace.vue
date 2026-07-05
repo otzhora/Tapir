@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { AlertCircle, Clipboard, Database, Eye, FileJson2, Plus, Send, TerminalSquare, X } from "lucide-vue-next";
 import type { NormalizedOperation, PreparedOperationRequest, RequestDraft, RequestDraftHeader, RequestDraftParameter, ServerWithDefinition } from "@tapir/core";
 import type { RequestTab, RequestTabItem } from "../types";
 import { eyebrowClass, fieldClass, iconButtonClass, mutedTextClass, primaryActionClass, softTextClass, strongTextClass } from "../uiClasses";
 import MethodBadge from "./MethodBadge.vue";
 
-defineProps<{
+type ValidationIssue = { field: string; message: string };
+
+const props = defineProps<{
   activeDraft: RequestDraft | null;
   activeRequestTab: RequestTab;
   canSend: boolean;
@@ -25,7 +28,7 @@ defineProps<{
   selectedContentTypes: string[];
   selectedOperation: NormalizedOperation | null;
   selectedServer: ServerWithDefinition | null;
-  validationIssues: Array<{ field: string; message: string }>;
+  validationIssues: ValidationIssue[];
 }>();
 
 const emit = defineEmits<{
@@ -60,6 +63,19 @@ function inputValue(event: Event): string {
 function checkedValue(event: Event): boolean {
   return (event.target as HTMLInputElement).checked;
 }
+
+const generalValidationIssues = computed(() => {
+  const preciseFields = new Set(["body", "path", "url", ...props.parameters.map((parameter) => parameter.name)]);
+  return props.validationIssues.filter((issue) => !preciseFields.has(issue.field));
+});
+
+function issuesForField(field: string): ValidationIssue[] {
+  return props.validationIssues.filter((issue) => issue.field === field);
+}
+
+function parameterIssues(parameter: RequestDraftParameter): ValidationIssue[] {
+  return issuesForField(parameter.name);
+}
 </script>
 
 <template>
@@ -82,7 +98,7 @@ function checkedValue(event: Event): boolean {
         </button>
       </nav>
 
-      <section v-if="activeDraft" class="grid min-h-full grid-rows-[auto_auto_1fr] bg-transparent">
+      <section v-if="activeDraft" class="grid min-h-full grid-rows-[auto_auto_auto_1fr] bg-transparent">
         <header class="grid gap-3 border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-panel-strong)] px-4 py-3 shadow-[var(--tapir-inset-header-shadow)] backdrop-blur-xl">
           <div class="flex min-w-0 items-center justify-between gap-4">
             <div class="grid min-w-0 gap-2">
@@ -102,10 +118,16 @@ function checkedValue(event: Event): boolean {
             </button>
           </div>
 
-          <div class="grid grid-cols-[minmax(96px,128px)_1fr] overflow-hidden rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)]">
-            <div class="grid place-items-center border-r border-[var(--tapir-border-control)] px-3 font-black text-[var(--tapir-accent)]">{{ activeDraft.method }}</div>
-            <input v-if="isCustomSpace" class="h-11 min-w-0 bg-transparent px-3 text-[var(--tapir-text-strong)] outline-none" :value="activeDraft.url" placeholder="https://api.example.com/resource" @input="emit('updateUrl', inputValue($event))" />
-            <input v-else class="h-11 min-w-0 bg-transparent px-3 text-[var(--tapir-text-strong)] outline-none" :value="operationUrl" readonly />
+          <div class="grid gap-1.5">
+            <div class="grid grid-cols-[minmax(96px,128px)_1fr] overflow-hidden rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)]">
+              <div class="grid place-items-center border-r border-[var(--tapir-border-control)] px-3 font-black text-[var(--tapir-accent)]">{{ activeDraft.method }}</div>
+              <input v-if="isCustomSpace" class="h-11 min-w-0 bg-transparent px-3 text-[var(--tapir-text-strong)] outline-none" :value="activeDraft.url" placeholder="https://api.example.com/resource" @input="emit('updateUrl', inputValue($event))" />
+              <input v-else class="h-11 min-w-0 bg-transparent px-3 text-[var(--tapir-text-strong)] outline-none" :value="operationUrl" readonly />
+            </div>
+            <p v-for="issue in [...issuesForField('url'), ...issuesForField('path')]" :key="`${issue.field}:${issue.message}`" class="field-error">
+              <AlertCircle :size="14" class="mt-0.5 shrink-0" />
+              <span>{{ issue.message }}</span>
+            </p>
           </div>
 
           <div :class="['grid gap-2 text-[13px] md:grid-cols-3', mutedTextClass]">
@@ -132,8 +154,8 @@ function checkedValue(event: Event): boolean {
           </button>
         </nav>
 
-        <section v-if="validationIssues.length > 0" class="mx-4 mt-4 grid gap-2 rounded-md border border-[var(--tapir-danger-border)] bg-[var(--tapir-danger-bg)] p-3 text-[var(--tapir-danger)]">
-          <div v-for="issue in validationIssues" :key="`${issue.field}:${issue.message}`" class="flex items-start gap-2 text-[13px] font-bold">
+        <section v-if="generalValidationIssues.length > 0" class="mx-4 mt-4 grid max-h-32 gap-2 overflow-auto rounded-md border border-[var(--tapir-danger-border)] bg-[var(--tapir-danger-bg)] p-3 text-[var(--tapir-danger)]">
+          <div v-for="issue in generalValidationIssues" :key="`${issue.field}:${issue.message}`" class="flex items-start gap-2 text-[13px] font-bold">
             <AlertCircle :size="16" class="mt-0.5 shrink-0" />
             <span>{{ issue.message }}</span>
           </div>
@@ -163,7 +185,13 @@ function checkedValue(event: Event): boolean {
                     </template>
                   </div>
                   <div :class="['table-cell', mutedTextClass]">{{ parameter.in }}</div>
-                  <div class="table-cell"><input :value="parameter.value" :class="fieldClass" :placeholder="parameter.name" @input="emit('setParameter', parameter.id, inputValue($event))" /></div>
+                  <div class="table-cell">
+                    <input :value="parameter.value" :class="fieldClass" :placeholder="parameter.name" @input="emit('setParameter', parameter.id, inputValue($event))" />
+                    <p v-for="issue in parameterIssues(parameter)" :key="`${parameter.id}:${issue.message}`" class="field-error mt-1.5">
+                      <AlertCircle :size="14" class="mt-0.5 shrink-0" />
+                      <span>{{ issue.message }}</span>
+                    </p>
+                  </div>
                   <div class="table-cell">
                     <button v-if="parameter.source === 'custom'" class="icon-button" title="Remove parameter" @click="emit('removeParameter', parameter.id)"><X :size="15" /></button>
                   </div>
@@ -203,6 +231,10 @@ function checkedValue(event: Event): boolean {
               </select>
             </div>
             <textarea :value="activeDraft.body" class="min-h-[190px] w-full min-w-0 resize-y rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)] p-3 font-mono text-[13px] leading-6 text-[var(--tapir-text-strong)] outline-none transition placeholder:text-[var(--tapir-text-subtle)] focus:border-[var(--tapir-accent)] focus:shadow-[0_0_0_2px_var(--tapir-focus-ring)]" spellcheck="false" placeholder="{ }" @input="emit('updateBodyValue', inputValue($event))"></textarea>
+            <p v-for="issue in issuesForField('body')" :key="issue.message" class="field-error">
+              <AlertCircle :size="14" class="mt-0.5 shrink-0" />
+              <span>{{ issue.message }}</span>
+            </p>
           </section>
 
           <section v-else-if="activeRequestTab === 'schema'" class="grid gap-3 lg:grid-cols-2">

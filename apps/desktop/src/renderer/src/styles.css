@@ -375,6 +375,17 @@ body.is-resizing {
   color: var(--tapir-text);
 }
 
+.field-error {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--tapir-danger);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 .code-block {
   margin: 0;
   max-height: 100%;
