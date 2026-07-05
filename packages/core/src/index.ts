@@ -29,6 +29,16 @@ export interface ServerInstance {
   updatedAt: string;
 }
 
+export interface ServerVariable {
+  id: string;
+  workspaceId: string;
+  serverInstanceId: string;
+  key: string;
+  value: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface NormalizedParameter {
   name: string;
   in: "path" | "query" | "header" | "cookie";
@@ -192,6 +202,15 @@ export interface ServerRepository {
   updateDefinitionSource(serverId: string, sourceId: string): Promise<void>;
 }
 
+export interface ServerVariableRepository {
+  listForServer(serverInstanceId: string): Promise<ServerVariable[]>;
+  replaceForServer(input: {
+    workspaceId: string;
+    serverInstanceId: string;
+    variables: Array<{ id?: string; key: string; value: string }>;
+  }): Promise<ServerVariable[]>;
+}
+
 export interface ApiDefinitionRepository {
   createSource(input: Omit<ApiDefinitionSource, "createdAt" | "updatedAt">): Promise<ApiDefinitionSource>;
   createDefinition(input: ApiDefinition): Promise<ApiDefinition>;
@@ -243,3 +262,4 @@ export * from "./ipc.js";
 export * from "./application.js";
 export * from "./requestPreparation.js";
 export * from "./urlNormalization.js";
+export * from "./variables.js";

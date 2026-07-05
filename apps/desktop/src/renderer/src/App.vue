@@ -119,6 +119,7 @@ function togglePanel(panel: "servers" | "operations" | "history"): void {
         @collapse="collapsedPanels.servers = $event"
         @server-added="workspaceServers.addServer"
         @server-refreshed="serverRefreshed"
+        @server-variables-saved="workspaceServers.updateServerVariables"
         @select-server="workspaceServers.selectedServerId.value = $event"
       />
 

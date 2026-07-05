@@ -105,6 +105,7 @@ function registerIpc(): void {
   handle("tapir:addServer", async (input) => tapir.addServer(input));
   handle("tapir:refreshServerSchema", async (input) => tapir.refreshServerSchema(input));
   handle("tapir:saveApiKeyHeader", async (input) => tapir.saveApiKeyHeader(input));
+  handle("tapir:saveServerVariables", async (input) => tapir.saveServerVariables(input));
   handle("tapir:previewOperation", async (input) => tapir.previewOperation(input));
   handle("tapir:callOperation", async (input) => tapir.callOperation(input));
   handle("tapir:listHistory", async (serverId) => tapir.listHistory(serverId));

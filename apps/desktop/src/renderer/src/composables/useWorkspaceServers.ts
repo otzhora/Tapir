@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import type { NormalizedOperation, ServerWithDefinition, Workspace } from "@tapir/core";
+import type { NormalizedOperation, ServerVariable, ServerWithDefinition, Workspace } from "@tapir/core";
 import { bridgeUnavailableMessage, getTapirBridge as getAvailableTapirBridge } from "../tapirBridge";
 
 export function useWorkspaceServers(setErrorMessage: (message: string) => void) {
@@ -38,6 +38,10 @@ export function useWorkspaceServers(setErrorMessage: (message: string) => void) 
     servers.value = servers.value.map((item) => item.server.id === server.server.id ? server : item);
   }
 
+  function updateServerVariables(serverId: string, variables: ServerVariable[]): void {
+    servers.value = servers.value.map((item) => item.server.id === serverId ? { ...item, variables } : item);
+  }
+
   function selectOperation(operation: NormalizedOperation): void {
     selectedOperationId.value = operation.operationId;
   }
@@ -60,6 +64,7 @@ export function useWorkspaceServers(setErrorMessage: (message: string) => void) 
     selectedServerId,
     servers,
     updateServer,
+    updateServerVariables,
     workspace
   };
 }

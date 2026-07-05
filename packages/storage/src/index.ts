@@ -11,6 +11,8 @@ import type {
   RequestDraftRepository,
   SecretValue,
   ServerInstance,
+  ServerVariable,
+  ServerVariableRepository,
   ServerRepository,
   UserAuthProfile,
   Workspace
@@ -22,6 +24,7 @@ export interface LocalTapirStorage {
   db: SqliteDatabase;
   workspace: Workspace;
   servers: ServerRepository;
+  serverVariables: ServerVariableRepository;
   definitions: ApiDefinitionRepository;
   authProfiles: AuthProfileRepository;
   history: HistoryRepository;
@@ -47,6 +50,7 @@ export async function createLocalTapirStorage(filePath: string, options: LocalTa
     db,
     workspace,
     servers: new SqliteServerRepository(db),
+    serverVariables: new SqliteServerVariableRepository(db),
     definitions: new SqliteApiDefinitionRepository(db),
     authProfiles: new SqliteAuthProfileRepository(db),
     history: new SqliteHistoryRepository(db),
@@ -97,6 +101,50 @@ export class SqliteServerRepository implements ServerRepository {
   async updateDefinitionSource(serverId: string, sourceId: string): Promise<void> {
     this.db.prepare("update server_instances set api_definition_source_id = ?, updated_at = ? where id = ?")
       .run(sourceId, new Date().toISOString(), serverId);
+  }
+}
+
+export class SqliteServerVariableRepository implements ServerVariableRepository {
+  constructor(private db: SqliteDatabase) {}
+
+  async listForServer(serverInstanceId: string): Promise<ServerVariable[]> {
+    const rows = this.db.prepare("select * from server_variables where server_instance_id = ? order by key collate nocase")
+      .all(serverInstanceId) as DbServerVariable[];
+    return rows.map(mapServerVariable);
+  }
+
+  async replaceForServer(input: {
+    workspaceId: string;
+    serverInstanceId: string;
+    variables: Array<{ id?: string; key: string; value: string }>;
+  }): Promise<ServerVariable[]> {
+    const now = new Date().toISOString();
+    const variables = input.variables
+      .map((variable) => ({ ...variable, key: variable.key.trim() }))
+      .filter((variable) => variable.key);
+    const duplicate = findDuplicateKey(variables.map((variable) => variable.key));
+    if (duplicate) throw new Error(`Variable ${duplicate} is already defined for this server.`);
+
+    this.db.transaction(() => {
+      this.db.prepare("delete from server_variables where server_instance_id = ?").run(input.serverInstanceId);
+      const insert = this.db.prepare(`
+        insert into server_variables (id, workspace_id, server_instance_id, key, value, created_at, updated_at)
+        values (?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const variable of variables) {
+        insert.run(
+          variable.id || crypto.randomUUID(),
+          input.workspaceId,
+          input.serverInstanceId,
+          variable.key,
+          variable.value,
+          now,
+          now
+        );
+      }
+    })();
+
+    return this.listForServer(input.serverInstanceId);
   }
 }
 
@@ -299,6 +347,7 @@ export class SqliteRequestDraftRepository implements RequestDraftRepository {
 
 type DbWorkspace = { id: string; name: string; created_at: string; updated_at: string };
 type DbServer = { id: string; workspace_id: string; name: string; base_url: string; spec_url: string; api_definition_source_id: string | null; created_at: string; updated_at: string };
+type DbServerVariable = { id: string; workspace_id: string; server_instance_id: string; key: string; value: string; created_at: string; updated_at: string };
 type DbDefinition = { id: string; source_id: string; name: string; version: string; raw_spec_json: string; normalized_json: string; fetched_at: string };
 type DbAuthProfile = { id: string; workspace_id: string; server_instance_id: string | null; name: string; type: "apiKeyHeader"; config_json: string; secret_ref: string; created_at: string; updated_at: string };
 type DbSecret = { id: string; auth_profile_id: string; encrypted_or_plain_value: string; created_at: string; updated_at: string };
@@ -331,6 +380,10 @@ function mapWorkspace(row: DbWorkspace): Workspace {
 
 function mapServer(row: DbServer): ServerInstance {
   return { id: row.id, workspaceId: row.workspace_id, name: row.name, baseUrl: row.base_url, specUrl: row.spec_url, apiDefinitionSourceId: row.api_definition_source_id, createdAt: row.created_at, updatedAt: row.updated_at };
+}
+
+function mapServerVariable(row: DbServerVariable): ServerVariable {
+  return { id: row.id, workspaceId: row.workspace_id, serverInstanceId: row.server_instance_id, key: row.key, value: row.value, createdAt: row.created_at, updatedAt: row.updated_at };
 }
 
 function mapDefinition(row: DbDefinition): ApiDefinition {
@@ -371,4 +424,14 @@ function mapRequestDraft(row: DbRequestDraft): RequestDraft {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+function findDuplicateKey(keys: string[]): string | null {
+  const seen = new Set<string>();
+  for (const key of keys) {
+    const normalized = key.toLowerCase();
+    if (seen.has(normalized)) return key;
+    seen.add(normalized);
+  }
+  return null;
 }

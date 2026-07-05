@@ -136,6 +136,26 @@ export async function runMigrations(db: SqliteDatabase): Promise<void> {
           "alter table request_drafts add column deprecation_reason text"
         ]),
         down: async () => undefined
+      },
+      {
+        name: "0005_server_variables",
+        up: async ({ context }) => runTransaction(context.db, [
+          `create table server_variables (
+            id text primary key,
+            workspace_id text not null references workspaces(id),
+            server_instance_id text not null references server_instances(id),
+            key text not null,
+            value text not null,
+            created_at text not null,
+            updated_at text not null,
+            unique(server_instance_id, key)
+          )`,
+          "create index server_variables_server_idx on server_variables(server_instance_id, key)"
+        ]),
+        down: async ({ context }) => runTransaction(context.db, [
+          "drop index server_variables_server_idx",
+          "drop table server_variables"
+        ])
       }
     ],
     storage: new BetterSqliteUmzugStorage(db)

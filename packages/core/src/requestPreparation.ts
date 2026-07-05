@@ -4,8 +4,10 @@ import type {
   PreparedRequest,
   PreparedRequestValidationIssue,
   RequestDraftHeader,
-  RequestDraftParameter
+  RequestDraftParameter,
+  ServerVariable
 } from "./index";
+import { resolveVariables } from "./variables.js";
 
 export interface PrepareOperationRequestInput {
   operation: NormalizedOperation;
@@ -14,13 +16,15 @@ export interface PrepareOperationRequestInput {
   contentType?: string;
   apiKeyHeaderName?: string;
   apiKeyValue?: string;
+  variables?: ServerVariable[];
 }
 
 export function prepareOperationRequest(baseUrl: string, input: PrepareOperationRequestInput): PreparedOperationRequest {
   const validationIssues: PreparedRequestValidationIssue[] = [];
+  const resolve = (value: string, field: string) => resolveVariables(value, { variables: input.variables, validationIssues, field });
   let path = input.operation.path;
   for (const parameter of input.operation.parameters.filter((parameter) => parameter.in === "path")) {
-    const value = input.values[parameter.name]?.trim() ?? "";
+    const value = resolve(input.values[parameter.name]?.trim() ?? "", parameter.name);
     if (parameter.required && !value) {
       validationIssues.push({ field: parameter.name, message: `${parameter.name} is required.` });
     }
@@ -30,9 +34,10 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
     validationIssues.push({ field: "path", message: "The request path still has unresolved parameters." });
   }
 
-  const url = new URL(path.replace(/^\//, ""), ensureTrailingSlash(baseUrl));
+  const resolvedBaseUrl = resolve(baseUrl, "url");
+  const url = createUrl(path.replace(/^\//, ""), ensureTrailingSlash(resolvedBaseUrl), validationIssues);
   for (const parameter of input.operation.parameters.filter((parameter) => parameter.in === "query")) {
-    const value = input.values[parameter.name]?.trim() ?? "";
+    const value = resolve(input.values[parameter.name]?.trim() ?? "", parameter.name);
     if (parameter.required && !value) {
       validationIssues.push({ field: parameter.name, message: `${parameter.name} is required.` });
     }
@@ -41,14 +46,14 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
 
   const headers: Record<string, string> = {};
   for (const parameter of input.operation.parameters.filter((parameter) => parameter.in === "header")) {
-    const value = input.values[parameter.name]?.trim() ?? "";
+    const value = resolve(input.values[parameter.name]?.trim() ?? "", parameter.name);
     if (parameter.required && !value) {
       validationIssues.push({ field: parameter.name, message: `${parameter.name} is required.` });
     }
     if (value) headers[parameter.name] = value;
   }
-  const apiKeyHeaderName = input.apiKeyHeaderName?.trim();
-  const apiKeyValue = input.apiKeyValue ?? "";
+  const apiKeyHeaderName = input.apiKeyHeaderName ? resolve(input.apiKeyHeaderName.trim(), "apiKeyHeaderName") : undefined;
+  const apiKeyValue = resolve(input.apiKeyValue ?? "", "apiKeyValue");
   if (apiKeyHeaderName && apiKeyValue) {
     headers[apiKeyHeaderName] = apiKeyValue;
   }
@@ -82,11 +87,13 @@ export interface PrepareCustomRequestInput {
   headers: RequestDraftHeader[];
   body?: string;
   contentType?: string;
+  variables?: ServerVariable[];
 }
 
 export function prepareCustomRequest(input: PrepareCustomRequestInput): PreparedOperationRequest {
   const validationIssues: PreparedRequestValidationIssue[] = [];
-  const urlValue = input.url.trim();
+  const resolve = (value: string, field: string) => resolveVariables(value, { variables: input.variables, validationIssues, field });
+  const urlValue = resolve(input.url.trim(), "url");
   let url: URL | null = null;
   try {
     url = new URL(urlValue);
@@ -96,18 +103,18 @@ export function prepareCustomRequest(input: PrepareCustomRequestInput): Prepared
 
   if (url) {
     for (const parameter of input.parameters.filter((parameter) => parameter.enabled && parameter.in === "query")) {
-      appendQueryValues(url, parameter.name.trim(), parameter.value);
+      appendQueryValues(url, resolve(parameter.name.trim(), parameter.name || "query"), resolve(parameter.value, parameter.name || "query"));
     }
   }
 
   const headers: Record<string, string> = {};
   for (const header of input.headers.filter((header) => header.enabled)) {
-    const name = header.name.trim();
-    if (name) headers[name] = header.value;
+    const name = resolve(header.name.trim(), header.name || "header");
+    if (name) headers[name] = resolve(header.value, name);
   }
   for (const parameter of input.parameters.filter((parameter) => parameter.enabled && parameter.in === "header")) {
-    const name = parameter.name.trim();
-    if (name) headers[name] = parameter.value;
+    const name = resolve(parameter.name.trim(), parameter.name || "header");
+    if (name) headers[name] = resolve(parameter.value, name);
   }
 
   const body = input.method === "GET" || input.method === "HEAD" ? undefined : input.body;
@@ -138,6 +145,15 @@ function appendQueryValues(url: URL, name: string, value: string): void {
   if (!value) return;
   for (const item of value.split(",").map((part) => part.trim()).filter(Boolean)) {
     url.searchParams.append(name, item);
+  }
+}
+
+function createUrl(path: string, baseUrl: string, validationIssues: PreparedRequestValidationIssue[]): URL {
+  try {
+    return new URL(path, baseUrl);
+  } catch {
+    validationIssues.push({ field: "url", message: "Request URL could not be prepared." });
+    return new URL(path.replace(/^\//, ""), "http://tapir.invalid/");
   }
 }
 

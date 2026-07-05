@@ -12,6 +12,8 @@ import type {
   RefreshServerSchemaRequest,
   RefreshServerSchemaResponse,
   SaveApiKeyHeaderRequest,
+  SaveServerVariablesRequest,
+  SaveServerVariablesResponse,
   UpdateRequestDraftRequest
 } from "./ipc";
 import type {
@@ -25,6 +27,7 @@ import type {
   RequestDraftRepository,
   RequestDraftParameter,
   ServerRepository,
+  ServerVariableRepository,
   AuthProfileRepository,
   Workspace
 } from "./index";
@@ -34,6 +37,7 @@ import { normalizeServerBaseUrl } from "./urlNormalization.js";
 export interface TapirApplicationDependencies {
   workspace: Workspace;
   servers: ServerRepository;
+  serverVariables: ServerVariableRepository;
   definitions: ApiDefinitionRepository;
   authProfiles: AuthProfileRepository;
   history: HistoryRepository;
@@ -47,11 +51,12 @@ export class TapirApplicationService {
   constructor(private dependencies: TapirApplicationDependencies) {}
 
   async getInitialState(): Promise<InitialStateResponse> {
-    const { definitions, servers, workspace } = this.dependencies;
+    const { definitions, servers, serverVariables, workspace } = this.dependencies;
     const serverInstances = await servers.list(workspace.id);
     const enriched = await Promise.all(serverInstances.map(async (server) => {
       const definition = await definitions.latestForServer(server.id);
-      return { server, definition: definition ? JSON.parse(definition.normalizedJson) as NormalizedApiDefinition : null };
+      const variables = await serverVariables.listForServer(server.id);
+      return { server, definition: definition ? JSON.parse(definition.normalizedJson) as NormalizedApiDefinition : null, variables };
     }));
     return { workspace, servers: enriched };
   }
@@ -144,13 +149,26 @@ export class TapirApplicationService {
     });
   }
 
+  async saveServerVariables(input: SaveServerVariablesRequest): Promise<SaveServerVariablesResponse> {
+    const { serverVariables, servers, workspace } = this.dependencies;
+    const serverInstances = await servers.list(workspace.id);
+    if (!serverInstances.some((server) => server.id === input.serverId)) throw new Error("Server not found.");
+    const variables = await serverVariables.replaceForServer({
+      workspaceId: workspace.id,
+      serverInstanceId: input.serverId,
+      variables: input.variables
+    });
+    return { variables };
+  }
+
   async callOperation(input: CallOperationRequest): Promise<CallOperationResponse> {
-    const { history, http, servers, workspace } = this.dependencies;
+    const { history, http, servers, serverVariables, workspace } = this.dependencies;
     const serverInstances = await servers.list(workspace.id);
     const server = serverInstances.find((candidate) => candidate.id === input.serverId);
     if (!server) throw new Error("Server not found.");
 
-    const prepared = prepareOperationRequest(server.baseUrl, input);
+    const variables = await serverVariables.listForServer(server.id);
+    const prepared = prepareOperationRequest(server.baseUrl, { ...input, variables });
     if (prepared.validationIssues.length > 0) {
       throw new Error(prepared.validationIssues.map((issue) => issue.message).join(" "));
     }
@@ -172,11 +190,12 @@ export class TapirApplicationService {
   }
 
   async previewOperation(input: CallOperationRequest): Promise<PreviewOperationResponse> {
-    const { servers, workspace } = this.dependencies;
+    const { servers, serverVariables, workspace } = this.dependencies;
     const serverInstances = await servers.list(workspace.id);
     const server = serverInstances.find((candidate) => candidate.id === input.serverId);
     if (!server) throw new Error("Server not found.");
-    return prepareOperationRequest(server.baseUrl, input);
+    const variables = await serverVariables.listForServer(server.id);
+    return prepareOperationRequest(server.baseUrl, { ...input, variables });
   }
 
   async listHistory(serverId: string) {
@@ -221,12 +240,12 @@ export class TapirApplicationService {
   }
 
   async previewCustomRequest(input: PreviewCustomRequestRequest): Promise<PreviewOperationResponse> {
-    return prepareCustomRequest(input);
+    return prepareCustomRequest({ ...input, variables: await this.variablesForOptionalServer(input.serverId) });
   }
 
   async callCustomRequest(input: CallCustomRequestRequest): Promise<CallOperationResponse> {
     const { history, http, workspace } = this.dependencies;
-    const prepared = prepareCustomRequest(input);
+    const prepared = prepareCustomRequest({ ...input, variables: await this.variablesForOptionalServer(input.serverId) });
     if (prepared.validationIssues.length > 0) {
       throw new Error(prepared.validationIssues.map((issue) => issue.message).join(" "));
     }
@@ -245,6 +264,14 @@ export class TapirApplicationService {
       });
     }
     return { request: prepared.redactedRequest, response };
+  }
+
+  private async variablesForOptionalServer(serverId: string | null | undefined) {
+    if (!serverId) return [];
+    const { servers, serverVariables, workspace } = this.dependencies;
+    const serverInstances = await servers.list(workspace.id);
+    if (!serverInstances.some((server) => server.id === serverId)) throw new Error("Server not found.");
+    return serverVariables.listForServer(serverId);
   }
 
   private async deprecateChangedOpenApiDrafts(

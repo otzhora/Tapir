@@ -13,6 +13,7 @@ import type {
   RequestDraftRepository,
   ServerInstance,
   ServerRepository,
+  ServerVariableRepository,
   Workspace
 } from "./index.js";
 
@@ -28,6 +29,7 @@ describe("TapirApplicationService", () => {
     const service = new TapirApplicationService({
       workspace,
       servers,
+      serverVariables: unusedServerVariables(),
       definitions: new MemoryDefinitionRepository(),
       authProfiles: unusedAuthProfiles(),
       history: unusedHistory(),
@@ -124,6 +126,7 @@ describe("TapirApplicationService", () => {
     const service = new TapirApplicationService({
       workspace,
       servers,
+      serverVariables: unusedServerVariables(),
       definitions,
       authProfiles: unusedAuthProfiles(),
       history: unusedHistory(),
@@ -256,6 +259,17 @@ function unusedAuthProfiles(): AuthProfileRepository {
       throw new Error("Not used.");
     },
     async getForServer() {
+      throw new Error("Not used.");
+    }
+  };
+}
+
+function unusedServerVariables(): ServerVariableRepository {
+  return {
+    async listForServer() {
+      return [];
+    },
+    async replaceForServer() {
       throw new Error("Not used.");
     }
   };

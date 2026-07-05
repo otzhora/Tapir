@@ -8,6 +8,7 @@ import {
   SqliteApiDefinitionRepository,
   SqliteAuthProfileRepository,
   SqliteHistoryRepository,
+  SqliteServerVariableRepository,
   SqliteServerRepository,
   type SqliteDatabase
 } from "./index";
@@ -34,7 +35,8 @@ describe("SQLite storage", () => {
       { name: "0001_initial_schema" },
       { name: "0002_request_drafts" },
       { name: "0003_history_request_draft_id" },
-      { name: "0004_request_draft_deprecation" }
+      { name: "0004_request_draft_deprecation" },
+      { name: "0005_server_variables" }
     ]);
   });
 
@@ -43,6 +45,7 @@ describe("SQLite storage", () => {
     const workspace = ensureDefaultWorkspace(db);
     const servers = new SqliteServerRepository(db);
     const definitions = new SqliteApiDefinitionRepository(db);
+    const serverVariables = new SqliteServerVariableRepository(db);
     const authProfiles = new SqliteAuthProfileRepository(db);
     const history = new SqliteHistoryRepository(db);
 
@@ -79,6 +82,11 @@ describe("SQLite storage", () => {
       headerName: "x-api-key",
       secretValue: "secret"
     });
+    await serverVariables.replaceForServer({
+      workspaceId: workspace.id,
+      serverInstanceId: server.id,
+      variables: [{ key: "baseUrl", value: "https://api.example.test" }]
+    });
     await history.create({
       workspaceId: workspace.id,
       serverInstanceId: server.id,
@@ -93,6 +101,9 @@ describe("SQLite storage", () => {
 
     await expect(servers.list(workspace.id)).resolves.toHaveLength(1);
     await expect(definitions.latestForServer(server.id)).resolves.toMatchObject({ name: "Example API" });
+    await expect(serverVariables.listForServer(server.id)).resolves.toMatchObject([
+      { key: "baseUrl", value: "https://api.example.test" }
+    ]);
     await expect(authProfiles.getForServer(server.id)).resolves.toMatchObject({
       profile: { configJson: JSON.stringify({ headerName: "x-api-key" }) },
       secret: { encryptedOrPlainValue: "secret" }
@@ -100,6 +111,30 @@ describe("SQLite storage", () => {
     await expect(history.listForServer(server.id)).resolves.toMatchObject([
       { operationId: "listPets", responseStatus: 200, durationMs: 42 }
     ]);
+  });
+
+  it("rejects duplicate variable keys for a server", async () => {
+    const db = await createDatabase();
+    const workspace = ensureDefaultWorkspace(db);
+    const servers = new SqliteServerRepository(db);
+    const serverVariables = new SqliteServerVariableRepository(db);
+    const server = await servers.create({
+      id: "server-1",
+      workspaceId: workspace.id,
+      name: "Example API",
+      baseUrl: "https://api.example.test",
+      specUrl: "https://api.example.test/openapi.json",
+      apiDefinitionSourceId: null
+    });
+
+    await expect(serverVariables.replaceForServer({
+      workspaceId: workspace.id,
+      serverInstanceId: server.id,
+      variables: [
+        { key: "token", value: "first" },
+        { key: "TOKEN", value: "second" }
+      ]
+    })).rejects.toThrow("Variable TOKEN is already defined for this server.");
   });
 });
 
