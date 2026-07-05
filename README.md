@@ -21,15 +21,18 @@ The desktop app is an Electron host around a Vue web app core. Local state is st
 
 ### Windows / Codex shell notes
 
-In this workspace, the default PowerShell Core shim at `C:\Users\rogac\AppData\Local\Microsoft\WindowsApps\pwsh.exe` may fail to launch with `CreateProcessAsUserW failed: 5`. Use Windows PowerShell directly when running commands from Codex:
+Codex is configured to use the real Windows PowerShell executable for this machine:
 
 ```cmd
-powershell.exe -NoProfile -Command <command>
+C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
 ```
+
+Avoid switching Codex back to the WindowsApps PowerShell alias at `C:\Users\rogac\AppData\Local\Microsoft\WindowsApps\pwsh.exe`; that alias has been unreliable from Codex. If an already-running thread still fails before commands run with `CreateProcessAsUserW failed: 5`, it likely cached the old shell path. Start a fresh Codex session or pass the real PowerShell path explicitly.
 
 If PowerShell blocks `npm.ps1` or an elevated shell cannot find `node`/`npm`, use the repo launchers instead. They route through `npm.cmd` and repair the Scoop Node path:
 
 ```cmd
+scripts\tapir-npm.cmd test
 scripts\tapir-npm.cmd run typecheck
 scripts\tapir-desktop-dev.cmd
 scripts\tapir-desktop-build.cmd

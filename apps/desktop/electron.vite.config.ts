@@ -29,6 +29,11 @@ const workspaceAliases = {
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin({ exclude: workspacePackages })],
+    build: {
+      rollupOptions: {
+        external: ["better-sqlite3"]
+      }
+    },
     resolve: {
       alias: workspaceAliases
     }

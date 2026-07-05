@@ -14,9 +14,8 @@
     "build": "npm run build --workspaces",
     "rebuild:native:electron": "npm --workspace @tapir/desktop run rebuild:native",
     "rebuild:native:node": "npm rebuild better-sqlite3",
-    "pretest": "npm run rebuild:native:node",
-    "test": "npm run test --workspaces --if-present",
-    "posttest": "npm run rebuild:native:electron",
+    "test": "node scripts/test.mjs",
+    "test:workspaces": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces"
   },
   "devDependencies": {
