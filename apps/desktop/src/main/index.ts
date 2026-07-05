@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync } from "node:fs";
 import type {
   TapirIpcChannel,
@@ -15,6 +16,7 @@ import { toIpcPayload } from "./ipcSerialization";
 import { SafeStorageAuthProfileRepository } from "./safeStorageAuthProfileRepository";
 
 const require = createRequire(import.meta.url);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const discovery = new FetchOpenApiDiscoveryService();
 const normalizer = new BasicOpenApiNormalizer();
 
