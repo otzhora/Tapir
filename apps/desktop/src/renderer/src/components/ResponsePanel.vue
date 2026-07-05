@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { ChevronDown } from "lucide-vue-next";
 import type { CallOperationResponse } from "@tapir/core";
+import JsonCodeEditor from "./JsonCodeEditor.vue";
 
-defineProps<{
+const props = defineProps<{
   collapsed: boolean;
   prettyBody: string;
   responseView: CallOperationResponse | null;
@@ -11,6 +13,22 @@ defineProps<{
 const emit = defineEmits<{
   collapse: [value: boolean];
 }>();
+
+const responseLanguage = computed(() => {
+  const headers = props.responseView?.response.headers ?? {};
+  const contentType = Object.entries(headers).find(([name]) => name.toLowerCase() === "content-type")?.[1] ?? "";
+  return isJsonMediaType(contentType) || looksLikeJson(props.prettyBody) ? "json" : "text";
+});
+
+function isJsonMediaType(value: string): boolean {
+  const mediaType = value.split(";")[0]?.trim().toLowerCase() ?? "";
+  return mediaType === "application/json" || mediaType.endsWith("+json");
+}
+
+function looksLikeJson(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.startsWith("{") || trimmed.startsWith("[");
+}
 </script>
 
 <template>
@@ -23,7 +41,14 @@ const emit = defineEmits<{
       <span v-if="responseView" class="font-extrabold text-[var(--tapir-success)]">{{ responseView.response.status }} · {{ responseView.response.durationMs }} ms</span>
     </header>
     <div v-if="!collapsed" class="h-[calc(100%-44px)] overflow-auto p-4">
-      <pre v-if="responseView" class="code-block min-h-full">{{ prettyBody }}</pre>
+      <JsonCodeEditor
+        v-if="responseView"
+        :model-value="prettyBody"
+        :editable="false"
+        :language="responseLanguage"
+        min-height="180px"
+        :title="responseLanguage === 'json' ? 'Response JSON' : 'Response body'"
+      />
       <div v-else class="empty-state h-full min-h-[180px]">Enter request details and click Send to get a response.</div>
     </div>
   </section>

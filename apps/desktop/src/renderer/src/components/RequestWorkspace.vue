@@ -4,6 +4,7 @@ import { AlertCircle, Clipboard, Database, Eye, FileJson2, Plus, Send, TerminalS
 import type { NormalizedOperation, PreparedOperationRequest, RequestDraft, RequestDraftHeader, RequestDraftParameter, ServerWithDefinition } from "@tapir/core";
 import type { RequestTab, RequestTabItem } from "../types";
 import { eyebrowClass, fieldClass, iconButtonClass, mutedTextClass, primaryActionClass, softTextClass, strongTextClass } from "../uiClasses";
+import JsonCodeEditor from "./JsonCodeEditor.vue";
 import MethodBadge from "./MethodBadge.vue";
 
 type ValidationIssue = { field: string; message: string };
@@ -75,6 +76,11 @@ function issuesForField(field: string): ValidationIssue[] {
 
 function parameterIssues(parameter: RequestDraftParameter): ValidationIssue[] {
   return issuesForField(parameter.name);
+}
+
+function isJsonMediaType(value: string): boolean {
+  const mediaType = value.split(";")[0]?.trim().toLowerCase() ?? "";
+  return mediaType === "application/json" || mediaType.endsWith("+json");
 }
 </script>
 
@@ -230,7 +236,13 @@ function parameterIssues(parameter: RequestDraftParameter): ValidationIssue[] {
                 <option v-for="type in selectedContentTypes" :key="type" :value="type">{{ type }}</option>
               </select>
             </div>
-            <textarea :value="activeDraft.body" class="min-h-[190px] w-full min-w-0 resize-y rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)] p-3 font-mono text-[13px] leading-6 text-[var(--tapir-text-strong)] outline-none transition placeholder:text-[var(--tapir-text-subtle)] focus:border-[var(--tapir-accent)] focus:shadow-[0_0_0_2px_var(--tapir-focus-ring)]" spellcheck="false" placeholder="{ }" @input="emit('updateBodyValue', inputValue($event))"></textarea>
+            <JsonCodeEditor
+              :model-value="activeDraft.body"
+              :language="isJsonMediaType(activeDraft.contentType) ? 'json' : 'text'"
+              :placeholder="isJsonMediaType(activeDraft.contentType) ? '{ }' : ''"
+              :title="isJsonMediaType(activeDraft.contentType) ? 'Request JSON' : 'Request body'"
+              @update:model-value="emit('updateBodyValue', $event)"
+            />
             <p v-for="issue in issuesForField('body')" :key="issue.message" class="field-error">
               <AlertCircle :size="14" class="mt-0.5 shrink-0" />
               <span>{{ issue.message }}</span>

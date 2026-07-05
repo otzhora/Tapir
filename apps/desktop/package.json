@@ -12,10 +12,16 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lint": "^6.9.7",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.5",
     "@tapir/core": "0.1.0",
     "@tapir/openapi": "0.1.0",
     "@tapir/storage": "0.1.0",
     "@vitejs/plugin-vue": "^6.0.7",
+    "codemirror": "^6.0.2",
     "electron": "^42.5.0",
     "electron-vite": "^5.0.0",
     "lucide-vue-next": "^0.468.0",

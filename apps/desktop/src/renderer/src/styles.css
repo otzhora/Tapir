@@ -386,6 +386,46 @@ body.is-resizing {
   line-height: 1.35;
 }
 
+.json-editor-shell {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--tapir-border-control);
+  border-radius: 7px;
+  background: var(--tapir-bg-code);
+}
+
+.json-editor-toolbar {
+  display: flex;
+  min-width: 0;
+  height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--tapir-border);
+  background: var(--tapir-bg-panel-strong);
+  padding: 0 8px 0 12px;
+}
+
+.json-editor-toolbar .icon-button {
+  width: 28px;
+  height: 28px;
+}
+
+.json-editor-host {
+  min-width: 0;
+}
+
+.json-editor-placeholder {
+  pointer-events: none;
+  position: absolute;
+  left: 64px;
+  top: 52px;
+  color: var(--tapir-text-subtle);
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+}
+
 .code-block {
   margin: 0;
   max-height: 100%;

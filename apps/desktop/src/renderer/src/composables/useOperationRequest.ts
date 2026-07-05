@@ -39,6 +39,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   const sendingByDraftId = reactive<Record<string, boolean>>({});
   const previewingByDraftId = reactive<Record<string, boolean>>({});
   const automaticDraftBySpace: Record<string, Promise<RequestDraft | null> | undefined> = {};
+  const draftSaveChains: Record<string, Promise<void> | undefined> = {};
   const activeRequestTab = ref<RequestTab>("params");
 
   const isCustomSpace = computed(() => input.selectedOperationId.value === CUSTOM_OPERATION_ID);
@@ -279,9 +280,25 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     const tapir = getTapirBridge();
     if (!tapir) return;
     drafts.value = drafts.value.map((draft) => draft.id === next.id ? next : draft);
-    const saved = await tapir.updateRequestDraft({ draft: next });
-    drafts.value = drafts.value.map((draft) => draft.id === saved.id ? saved : draft);
-    void refreshPreview(saved);
+
+    const saveChain = (draftSaveChains[next.id] ?? Promise.resolve()).then(async () => {
+      const latest = drafts.value.find((draft) => draft.id === next.id) ?? next;
+      const saved = await tapir.updateRequestDraft({ draft: latest });
+      const current = drafts.value.find((draft) => draft.id === saved.id);
+      if (current && editableDraftFieldsMatch(current, latest)) {
+        drafts.value = drafts.value.map((draft) => draft.id === saved.id ? saved : draft);
+        void refreshPreview(saved);
+      } else {
+        void refreshPreview(current ?? latest);
+      }
+    });
+
+    const trackedSave = saveChain.finally(() => {
+      if (draftSaveChains[next.id] === trackedSave) delete draftSaveChains[next.id];
+    });
+
+    draftSaveChains[next.id] = trackedSave;
+    await trackedSave;
   }
 
   async function callOperation(): Promise<void> {
@@ -499,6 +516,19 @@ function enabledParameters(draft: RequestDraft | null): RequestDraftParameter[] 
 
 function enabledHeaders(draft: RequestDraft | null): RequestDraftHeader[] {
   return parseHeadersFromDraft(draft).filter((header) => header.enabled);
+}
+
+function editableDraftFieldsMatch(left: RequestDraft, right: RequestDraft): boolean {
+  return left.name === right.name
+    && left.isNameManual === right.isNameManual
+    && left.method === right.method
+    && left.path === right.path
+    && left.url === right.url
+    && left.parametersJson === right.parametersJson
+    && left.headersJson === right.headersJson
+    && left.body === right.body
+    && left.contentType === right.contentType
+    && left.sortOrder === right.sortOrder;
 }
 
 function defaultOperationDraftName(operation: NormalizedOperation): string {
