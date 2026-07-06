@@ -6,9 +6,9 @@
   "main": "dist/packages/openapi/src/index.js",
   "types": "dist/packages/openapi/src/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
+    "test": "node ../../node_modules/vitest/vitest.mjs run",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@tapir/core": "0.1.0"

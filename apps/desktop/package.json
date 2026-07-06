@@ -9,6 +9,7 @@
     "dev": "electron-vite dev",
     "build": "vue-tsc --noEmit && electron-vite build",
     "rebuild:native": "node scripts/rebuild-native.mjs",
+    "test": "node ../../node_modules/vitest/vitest.mjs run --configLoader runner",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
@@ -30,6 +31,8 @@
   "devDependencies": {
     "@electron/rebuild": "^4.0.6",
     "@tailwindcss/vite": "^4.3.2",
+    "@vue/test-utils": "^2.4.11",
+    "happy-dom": "^20.10.6",
     "tailwindcss": "^4.3.2",
     "typescript": "^5.5.4",
     "vite": "^8.1.0",

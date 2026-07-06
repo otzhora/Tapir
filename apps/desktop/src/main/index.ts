@@ -12,6 +12,7 @@ import { TapirApplicationService } from "@tapir/core";
 import { BasicOpenApiNormalizer, FetchOpenApiDiscoveryService } from "@tapir/openapi";
 import { createLocalTapirStorage } from "@tapir/storage";
 import { FetchHttpExecutor } from "./fetchHttpExecutor";
+import { assertTrustedRendererUrl, validateDevRendererUrl } from "./ipcSecurity";
 import { toIpcPayload } from "./ipcSerialization";
 import { SafeStorageAuthProfileRepository } from "./safeStorageAuthProfileRepository";
 
@@ -58,7 +59,7 @@ function electronBetterSqliteBindingPath(): string {
 
 function createWindow(): void {
   const devRendererUrl = process.env.ELECTRON_RENDERER_URL
-    ? validateDevRendererUrl(process.env.ELECTRON_RENDERER_URL)
+    ? validateDevRendererUrl(process.env.ELECTRON_RENDERER_URL, app.isPackaged)
     : null;
   const window = new BrowserWindow({
     width: 1320,
@@ -87,16 +88,6 @@ function createWindow(): void {
   } else {
     void window.loadFile(join(__dirname, "../renderer/index.html"));
   }
-}
-
-function validateDevRendererUrl(value: string): string {
-  if (!app.isPackaged) {
-    const url = new URL(value);
-    const isLocal = (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]")
-      && (url.protocol === "http:" || url.protocol === "https:");
-    if (isLocal) return url.toString();
-  }
-  throw new Error("ELECTRON_RENDERER_URL must point to a local development server.");
 }
 
 app.whenReady().then(() => {
@@ -144,17 +135,5 @@ function handle<Channel extends TapirIpcChannel>(
 }
 
 function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
-  const url = event.senderFrame?.url;
-  if (!url) throw new Error("Blocked IPC call from an untrusted renderer.");
-  if (isTrustedRendererUrl(url)) return;
-  throw new Error("Blocked IPC call from an untrusted renderer.");
-}
-
-function isTrustedRendererUrl(value: string): boolean {
-  const url = new URL(value);
-  if (url.protocol === "file:" && url.pathname.endsWith("/renderer/index.html")) return true;
-  if (!app.isPackaged && (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]")) {
-    return url.protocol === "http:" || url.protocol === "https:";
-  }
-  return false;
+  assertTrustedRendererUrl(event.senderFrame?.url, app.isPackaged);
 }
