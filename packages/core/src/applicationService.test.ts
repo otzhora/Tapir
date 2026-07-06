@@ -158,6 +158,82 @@ describe("TapirApplicationService", () => {
       url: "https://api.example.test/pets/pet%201"
     });
   });
+
+  it("rejects history and draft changes outside the active workspace", async () => {
+    const workspace: Workspace = {
+      id: "workspace-1",
+      name: "Local Workspace",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z"
+    };
+    const servers = new MemoryServerRepository();
+    const requestDrafts = new MemoryRequestDraftRepository();
+    const service = new TapirApplicationService({
+      workspace,
+      servers,
+      serverVariables: unusedServerVariables(),
+      definitions: new MemoryDefinitionRepository(),
+      authProfiles: unusedAuthProfiles(),
+      history: unusedHistory(),
+      requestDrafts,
+      discovery: fixedDiscovery(),
+      normalizer: fixedNormalizer(),
+      http: unusedHttp()
+    });
+    await servers.create({
+      id: "other-server",
+      workspaceId: "workspace-2",
+      name: "Other API",
+      baseUrl: "https://other.example.test",
+      specUrl: "https://other.example.test/openapi.json",
+      apiDefinitionSourceId: null
+    });
+    await requestDrafts.create({
+      id: "other-draft",
+      workspaceId: "workspace-2",
+      serverInstanceId: "other-server",
+      sourceType: "custom",
+      operationId: null,
+      deprecatedAt: null,
+      deprecationReason: null,
+      name: "Other draft",
+      isNameManual: false,
+      method: "GET",
+      path: "",
+      url: "https://other.example.test",
+      parametersJson: "[]",
+      headersJson: "[]",
+      body: "",
+      contentType: "application/json",
+      sortOrder: 1
+    });
+
+    await expect(service.listHistory("other-server")).rejects.toThrow("Server not found.");
+    await expect(service.deleteRequestDraft("other-draft")).rejects.toThrow("Request draft not found.");
+    await expect(service.updateRequestDraft({
+      draft: {
+        id: "other-draft",
+        workspaceId: workspace.id,
+        serverInstanceId: null,
+        sourceType: "custom",
+        operationId: null,
+        deprecatedAt: null,
+        deprecationReason: null,
+        name: "Tampered",
+        isNameManual: true,
+        method: "GET",
+        path: "",
+        url: "https://api.example.test",
+        parametersJson: "[]",
+        headersJson: "[]",
+        body: "",
+        contentType: "application/json",
+        sortOrder: 1,
+        createdAt: "2026-07-01T00:00:00.000Z",
+        updatedAt: "2026-07-01T00:00:00.000Z"
+      }
+    })).rejects.toThrow("Request draft not found.");
+  });
 });
 
 class MemoryServerRepository implements ServerRepository {

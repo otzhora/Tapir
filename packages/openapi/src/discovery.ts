@@ -9,6 +9,9 @@ const discoveryPaths = [
   "/.well-known/openapi.json"
 ];
 
+const discoveryTimeoutMs = 15_000;
+const maxOpenApiDocumentBytes = 5 * 1024 * 1024;
+
 export class FetchOpenApiDiscoveryService implements OpenApiDiscoveryService {
   async discover(baseUrl: string): Promise<DiscoveryResult> {
     const normalizedBase = normalizeBaseUrl(baseUrl);
@@ -16,14 +19,19 @@ export class FetchOpenApiDiscoveryService implements OpenApiDiscoveryService {
 
     for (const path of discoveryPaths) {
       const specUrl = new URL(path, normalizedBase).toString();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), discoveryTimeoutMs);
       try {
-        const response = await fetch(specUrl, { headers: { accept: "application/json" } });
+        const response = await fetch(specUrl, {
+          headers: { accept: "application/json" },
+          signal: controller.signal
+        });
         if (!response.ok) {
           errors.push(`${path}: HTTP ${response.status}`);
           continue;
         }
 
-        const document = await response.json();
+        const document = JSON.parse(await readLimitedText(response, maxOpenApiDocumentBytes, "OpenAPI document")) as unknown;
         if (!isOpenApiDocument(document)) {
           errors.push(`${path}: not an OpenAPI document`);
           continue;
@@ -32,6 +40,8 @@ export class FetchOpenApiDiscoveryService implements OpenApiDiscoveryService {
         return { specUrl, discoveryMethod: path, document };
       } catch (error) {
         errors.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        clearTimeout(timeout);
       }
     }
 
@@ -46,4 +56,38 @@ function normalizeBaseUrl(baseUrl: string): string {
   url.search = "";
   url.hash = "";
   return url.toString();
+}
+
+async function readLimitedText(response: Response, maxBytes: number, label: string): Promise<string> {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength && Number(contentLength) > maxBytes) {
+    throw new Error(`${label} exceeds Tapir's ${formatBytes(maxBytes)} limit.`);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return response.text();
+
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    if (received > maxBytes) {
+      await reader.cancel();
+      throw new Error(`${label} exceeds Tapir's ${formatBytes(maxBytes)} limit.`);
+    }
+    chunks.push(value);
+  }
+
+  const merged = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(merged);
+}
+
+function formatBytes(value: number): string {
+  return `${Math.round(value / 1024 / 1024)} MB`;
 }

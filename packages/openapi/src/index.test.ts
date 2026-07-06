@@ -106,4 +106,46 @@ describe("BasicOpenApiNormalizer", () => {
       securitySchemes: [{ key: "ApiKeyAuth", type: "apiKey", name: "x-api-key", in: "header" }]
     });
   });
+
+  it("resolves repeated sibling refs without treating them as cycles", () => {
+    const normalizer = new BasicOpenApiNormalizer();
+
+    const normalized = normalizer.normalize({
+      openapi: "3.0.3",
+      info: { title: "Pets API", version: "1.0.0" },
+      components: {
+        schemas: {
+          Pet: { type: "object", properties: { id: { type: "string" } } }
+        }
+      },
+      paths: {
+        "/pets": {
+          post: {
+            operationId: "createPet",
+            requestBody: {
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      first: { $ref: "#/components/schemas/Pet" },
+                      second: { $ref: "#/components/schemas/Pet" }
+                    }
+                  }
+                }
+              }
+            },
+            responses: { "200": { description: "OK" } }
+          }
+        }
+      }
+    });
+
+    expect(normalized.operations[0]?.requestBodySchema).toMatchObject({
+      properties: {
+        first: { type: "object", properties: { id: { type: "string" } } },
+        second: { type: "object", properties: { id: { type: "string" } } }
+      }
+    });
+  });
 });

@@ -199,6 +199,7 @@ export class TapirApplicationService {
   }
 
   async listHistory(serverId: string) {
+    await this.requireWorkspaceServer(serverId);
     return this.dependencies.history.listForServer(serverId);
   }
 
@@ -209,6 +210,7 @@ export class TapirApplicationService {
 
   async createRequestDraft(input: CreateRequestDraftRequest): Promise<RequestDraft> {
     const { requestDrafts, workspace } = this.dependencies;
+    if (input.serverId) await this.requireWorkspaceServer(input.serverId);
     return requestDrafts.create({
       id: crypto.randomUUID(),
       workspaceId: workspace.id,
@@ -231,11 +233,17 @@ export class TapirApplicationService {
   }
 
   async updateRequestDraft(input: UpdateRequestDraftRequest): Promise<RequestDraft> {
-    if (input.draft.workspaceId !== this.dependencies.workspace.id) throw new Error("Workspace not found.");
-    return this.dependencies.requestDrafts.update(input.draft);
+    const existing = await this.requireWorkspaceDraft(input.draft.id);
+    if (input.draft.serverInstanceId) await this.requireWorkspaceServer(input.draft.serverInstanceId);
+    return this.dependencies.requestDrafts.update({
+      ...input.draft,
+      id: existing.id,
+      workspaceId: this.dependencies.workspace.id
+    });
   }
 
   async deleteRequestDraft(id: string): Promise<void> {
+    await this.requireWorkspaceDraft(id);
     await this.dependencies.requestDrafts.delete(id);
   }
 
@@ -272,6 +280,20 @@ export class TapirApplicationService {
     const serverInstances = await servers.list(workspace.id);
     if (!serverInstances.some((server) => server.id === serverId)) throw new Error("Server not found.");
     return serverVariables.listForServer(serverId);
+  }
+
+  private async requireWorkspaceServer(serverId: string) {
+    const { servers, workspace } = this.dependencies;
+    const server = (await servers.list(workspace.id)).find((candidate) => candidate.id === serverId);
+    if (!server) throw new Error("Server not found.");
+    return server;
+  }
+
+  private async requireWorkspaceDraft(draftId: string): Promise<RequestDraft> {
+    const { requestDrafts, workspace } = this.dependencies;
+    const draft = (await requestDrafts.listForWorkspace(workspace.id)).find((candidate) => candidate.id === draftId);
+    if (!draft) throw new Error("Request draft not found.");
+    return draft;
   }
 
   private async deprecateChangedOpenApiDrafts(

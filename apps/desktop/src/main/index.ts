@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +57,9 @@ function electronBetterSqliteBindingPath(): string {
 }
 
 function createWindow(): void {
+  const devRendererUrl = process.env.ELECTRON_RENDERER_URL
+    ? validateDevRendererUrl(process.env.ELECTRON_RENDERER_URL)
+    : null;
   const window = new BrowserWindow({
     width: 1320,
     height: 860,
@@ -71,17 +74,29 @@ function createWindow(): void {
       height: 44
     },
     webPreferences: {
-      preload: join(__dirname, "../preload/index.mjs"),
-      sandbox: false,
-      contextIsolation: true
+      preload: join(__dirname, "../preload/index.cjs"),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: true
     }
   });
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(process.env.ELECTRON_RENDERER_URL);
+  if (devRendererUrl) {
+    void window.loadURL(devRendererUrl);
   } else {
     void window.loadFile(join(__dirname, "../renderer/index.html"));
   }
+}
+
+function validateDevRendererUrl(value: string): string {
+  if (!app.isPackaged) {
+    const url = new URL(value);
+    const isLocal = (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]")
+      && (url.protocol === "http:" || url.protocol === "https:");
+    if (isLocal) return url.toString();
+  }
+  throw new Error("ELECTRON_RENDERER_URL must point to a local development server.");
 }
 
 app.whenReady().then(() => {
@@ -121,8 +136,25 @@ function handle<Channel extends TapirIpcChannel>(
   channel: Channel,
   handler: (request: TapirIpcRequest<Channel>) => Promise<TapirIpcResponse<Channel>>
 ): void {
-  ipcMain.handle(channel, async (_event, request: TapirIpcRequest<Channel>) => {
+  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, request: TapirIpcRequest<Channel>) => {
+    assertTrustedRenderer(event);
     const response = await handler(request);
     return toIpcPayload(response);
   });
+}
+
+function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
+  const url = event.senderFrame?.url;
+  if (!url) throw new Error("Blocked IPC call from an untrusted renderer.");
+  if (isTrustedRendererUrl(url)) return;
+  throw new Error("Blocked IPC call from an untrusted renderer.");
+}
+
+function isTrustedRendererUrl(value: string): boolean {
+  const url = new URL(value);
+  if (url.protocol === "file:" && url.pathname.endsWith("/renderer/index.html")) return true;
+  if (!app.isPackaged && (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]")) {
+    return url.protocol === "http:" || url.protocol === "https:";
+  }
+  return false;
 }

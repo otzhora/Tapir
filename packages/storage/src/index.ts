@@ -35,6 +35,8 @@ export interface LocalTapirStorageOptions {
   nativeBinding?: string;
 }
 
+const maxStoredHistoryBodyCharacters = 1_000_000;
+
 export async function openTapirDatabase(filePath: string, options: LocalTapirStorageOptions = {}): Promise<SqliteDatabase> {
   const db = new Database(filePath, { nativeBinding: options.nativeBinding });
   db.pragma("journal_mode = WAL");
@@ -241,7 +243,12 @@ export class SqliteHistoryRepository implements HistoryRepository {
   constructor(private db: SqliteDatabase) {}
 
   async create(input: Omit<CallHistoryEntry, "id" | "createdAt">): Promise<CallHistoryEntry> {
-    const entry: CallHistoryEntry = { ...input, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
+    const entry: CallHistoryEntry = {
+      ...input,
+      responseBody: truncateHistoryBody(input.responseBody),
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString()
+    };
     this.db.prepare(`
       insert into call_history_entries
       (id, workspace_id, server_instance_id, operation_id, request_draft_id, request_snapshot_json, response_status, response_headers_json, response_body, duration_ms, created_at)
@@ -434,4 +441,9 @@ function findDuplicateKey(keys: string[]): string | null {
     seen.add(normalized);
   }
   return null;
+}
+
+function truncateHistoryBody(value: string | null): string | null {
+  if (value === null || value.length <= maxStoredHistoryBodyCharacters) return value;
+  return `${value.slice(0, maxStoredHistoryBodyCharacters)}\n\n[Tapir truncated this stored history response.]`;
 }

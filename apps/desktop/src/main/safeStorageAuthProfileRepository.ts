@@ -35,7 +35,9 @@ export class SafeStorageAuthProfileRepository implements AuthProfileRepository {
 }
 
 function protectSecret(value: string): string {
-  if (!safeStorage.isEncryptionAvailable()) return value;
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("Tapir cannot save this secret because OS-backed encryption is unavailable.");
+  }
   return `safeStorage:v1:${safeStorage.encryptString(value).toString("base64")}`;
 }
 
