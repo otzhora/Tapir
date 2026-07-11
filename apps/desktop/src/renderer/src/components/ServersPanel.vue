@@ -164,13 +164,13 @@ function toErrorMessage(error: unknown): string {
       <p v-if="errorMessage" class="my-2.5 rounded-md border border-[var(--tapir-danger-border)] bg-[var(--tapir-danger-bg)] p-2.5 text-[13px] text-[var(--tapir-danger)]">{{ errorMessage }}</p>
       <p v-if="schemaMessage" class="my-2.5 rounded-md border border-[var(--tapir-method-get-border)] bg-[var(--tapir-method-get-bg)] p-2.5 text-[13px] text-[var(--tapir-success)]">{{ schemaMessage }}</p>
 
-      <div class="grid gap-3">
-        <div v-for="item in servers" :key="item.server.id" class="grid gap-2">
-          <div :class="[itemClass, 'grid-cols-[17px_minmax(0,1fr)_24px_28px]', item.server.id === selectedServerId && activeItemClass, item.server.id === selectedServerId && 'sticky-server-header sticky top-0 z-10']">
+      <div class="grid gap-2">
+        <div v-for="item in servers" :key="item.server.id" class="grid gap-1">
+          <div :class="[itemClass, 'grid-cols-[17px_minmax(0,1fr)_24px_28px] items-center px-2 py-1.5', item.server.id === selectedServerId && activeItemClass, item.server.id === selectedServerId && 'sticky-server-header sticky top-0 z-10']">
             <Server :size="17" />
-            <button class="grid min-w-0 gap-[3px] text-left" :title="item.server.id === selectedServerId ? 'Toggle server operations' : 'Select server'" @click="activateServer(item.server.id)">
+            <button class="flex min-w-0 items-baseline gap-2 overflow-hidden text-left" :title="`${item.server.name} — ${item.server.baseUrl}`" @click="activateServer(item.server.id)">
               <strong class="truncate">{{ item.server.name }}</strong>
-              <small :class="['truncate', mutedTextClass]">{{ item.server.baseUrl }}</small>
+              <small :class="['shrink truncate', mutedTextClass]">{{ item.server.baseUrl }}</small>
             </button>
             <button v-if="item.server.id === selectedServerId" :class="['grid size-6 place-items-center', iconButtonClass]" title="Toggle server operations" @click="activateServer(item.server.id)">
               <ChevronRight :size="15" :class="['transition-transform', expandedServerId === item.server.id && 'rotate-90']" />
@@ -181,27 +181,27 @@ function toErrorMessage(error: unknown): string {
             </button>
           </div>
 
-          <div v-if="item.server.id === selectedServerId && expandedServerId === item.server.id" class="ml-5 grid gap-1.5 border-l border-[var(--tapir-border)] pl-3">
-            <div :class="[eyebrowClass, 'mb-1 flex items-center justify-between px-2']">
+          <div v-if="item.server.id === selectedServerId && expandedServerId === item.server.id" class="ml-3 grid gap-0.5 border-l border-[var(--tapir-border)] pl-2">
+            <div :class="[eyebrowClass, 'mb-0.5 flex items-center justify-between px-2 py-1']">
               <span>Operations</span>
               <strong>{{ operationsCount }}</strong>
             </div>
-            <button :class="[itemClass, 'py-2', selectedOperationId === CUSTOM_OPERATION_ID && activeItemClass]" @click="emit('selectCustom')">
-              <span :class="['grid h-7 w-14 place-items-center rounded bg-[var(--tapir-bg-control-hover)] text-[11px] font-black', softTextClass]">HTTP</span>
-              <span class="grid min-w-0 gap-[3px]">
-                <strong class="truncate">Custom requests</strong>
+            <button :class="[itemClass, 'grid-cols-[auto_minmax(0,1fr)_auto] items-center px-2 py-1.5', selectedOperationId === CUSTOM_OPERATION_ID && activeItemClass]" @click="emit('selectCustom')">
+              <span :class="['grid h-6 w-[58px] place-items-center rounded bg-[var(--tapir-bg-control-hover)] text-[11px] font-black', softTextClass]">HTTP</span>
+              <span class="flex min-w-0 items-baseline gap-2 overflow-hidden">
+                <strong class="shrink-0 truncate">Custom requests</strong>
                 <small :class="['truncate', mutedTextClass]">Any method and URL</small>
               </span>
               <Plus :size="16" :class="['ml-auto shrink-0 hover:text-[var(--tapir-text-strong)]', mutedTextClass]" @click.stop="emit('addCustomRequest')" />
             </button>
 
-            <div v-for="group in groupedOperations" :key="group.name" class="grid gap-1.5">
-              <h2 :class="['mb-0 mt-2 px-2 text-[11px] font-bold uppercase', subtleTextClass]">{{ group.name }}</h2>
-              <button v-for="operation in group.items" :key="operation.operationId" :class="[itemClass, 'py-2', operation.operationId === selectedOperationId && activeItemClass]" @click="emit('selectOperation', operation)">
+            <div v-for="group in groupedOperations" :key="group.name" class="grid gap-0.5">
+              <h2 :class="['mb-0 mt-1.5 px-2 py-1 text-[11px] font-bold uppercase', subtleTextClass]">{{ group.name }}</h2>
+              <button v-for="operation in group.items" :key="operation.operationId" :class="[itemClass, 'grid-cols-[auto_minmax(0,1fr)_auto] items-center px-2 py-1.5', operation.operationId === selectedOperationId && activeItemClass]" :title="`${operation.method} ${operation.path} — ${operation.summary || operation.operationId}`" @click="emit('selectOperation', operation)">
                 <MethodBadge :method="operation.method" />
-                <span class="grid min-w-0 gap-[3px]">
+                <span class="flex min-w-0 items-baseline gap-2 overflow-hidden">
                   <strong class="truncate">{{ operation.summary || operation.operationId }}</strong>
-                  <small :class="['truncate', mutedTextClass]">{{ operation.path }}</small>
+                  <small :class="['shrink truncate', mutedTextClass]">{{ operation.path }}</small>
                 </span>
                 <Plus :size="16" :class="['ml-auto shrink-0 hover:text-[var(--tapir-text-strong)]', mutedTextClass]" @click.stop="emit('addOperationRequest', operation)" />
               </button>

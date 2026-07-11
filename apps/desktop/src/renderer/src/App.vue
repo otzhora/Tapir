@@ -117,7 +117,7 @@ async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCoun
             <HistoryIcon :size="15" /> History
           </button>
         </div>
-        <div class="min-h-0 overflow-auto">
+        <div class="min-h-0 overflow-x-hidden overflow-y-auto">
       <ServersPanel
         v-if="sidebarView === 'servers'"
         :grouped-operations="workspaceServers.groupedOperations.value"

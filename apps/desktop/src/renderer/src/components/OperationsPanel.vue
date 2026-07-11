@@ -23,7 +23,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <section :class="[panelClass, collapsed && 'overflow-hidden px-2']">
+  <section :class="[panelClass, collapsed ? 'overflow-hidden px-2' : 'overflow-x-hidden overflow-y-auto']">
     <button v-if="collapsed" :class="['grid h-full w-full place-items-start pt-3', mutedTextClass]" title="Expand operations" @click="emit('collapse', false)">
       <ListFilter :size="20" />
     </button>
@@ -47,7 +47,7 @@ const emit = defineEmits<{
         <div class="grid gap-2.5">
           <h2 :class="['mb-0.5 mt-1 text-xs font-bold uppercase', subtleTextClass]">Custom</h2>
           <button
-            :class="[itemClass, selectedOperationId === CUSTOM_OPERATION_ID && activeItemClass]"
+            :class="[itemClass, 'grid-cols-[auto_minmax(0,1fr)_auto]', selectedOperationId === CUSTOM_OPERATION_ID && activeItemClass]"
             @click="emit('selectCustom')"
           >
             <span :class="['grid h-7 w-14 place-items-center rounded bg-[var(--tapir-bg-control-hover)] text-[11px] font-black', softTextClass]">HTTP</span>
@@ -64,7 +64,7 @@ const emit = defineEmits<{
           <button
             v-for="operation in group.items"
             :key="operation.operationId"
-            :class="[itemClass, operation.operationId === selectedOperationId && activeItemClass]"
+            :class="[itemClass, 'grid-cols-[auto_minmax(0,1fr)_auto]', operation.operationId === selectedOperationId && activeItemClass]"
             @click="emit('selectOperation', operation)"
           >
             <MethodBadge :method="operation.method" />
