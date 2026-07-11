@@ -6,6 +6,7 @@ import AppHeader from "./components/AppHeader.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
 import RequestWorkspace from "./components/RequestWorkspace.vue";
 import ResponsePanel from "./components/ResponsePanel.vue";
+import ServerConfiguration from "./components/ServerConfiguration.vue";
 import ServersPanel from "./components/ServersPanel.vue";
 import { CUSTOM_OPERATION_ID, useOperationRequest } from "./composables/useOperationRequest";
 import { useResizablePanels } from "./composables/useResizablePanels";
@@ -16,6 +17,7 @@ import { panelClass } from "./uiClasses";
 const errorMessage = ref("");
 const history = ref<CallHistoryEntry[]>([]);
 const sidebarView = ref<"servers" | "history">("servers");
+const workspaceView = ref<"requests" | "serverConfiguration">("requests");
 
 const {
   collapsedPanels,
@@ -63,25 +65,39 @@ watch(workspaceServers.selectedServerId, async (serverId) => {
 });
 
 async function selectOperation(operation: NormalizedOperation): Promise<void> {
+  workspaceView.value = "requests";
   workspaceServers.selectOperation(operation);
   await nextTick();
   await request.ensureActiveSpaceHasDraft();
 }
 
 async function addOperationRequest(operation: NormalizedOperation): Promise<void> {
+  workspaceView.value = "requests";
   workspaceServers.selectOperation(operation);
   await request.createOpenApiRequest(operation);
 }
 
 async function selectCustom(): Promise<void> {
+  workspaceView.value = "requests";
   workspaceServers.selectedOperationId.value = CUSTOM_OPERATION_ID;
   await nextTick();
   await request.ensureActiveSpaceHasDraft();
 }
 
 async function addCustomRequest(): Promise<void> {
+  workspaceView.value = "requests";
   workspaceServers.selectedOperationId.value = CUSTOM_OPERATION_ID;
   await request.createCustomRequest();
+}
+
+function selectServer(serverId: string): void {
+  workspaceView.value = "requests";
+  workspaceServers.selectedServerId.value = serverId;
+}
+
+function configureServer(serverId: string): void {
+  workspaceServers.selectedServerId.value = serverId;
+  workspaceView.value = "serverConfiguration";
 }
 
 async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCount: number): Promise<void> {
@@ -124,15 +140,14 @@ async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCoun
         :operations-count="workspaceServers.operations.value.length"
         :selected-operation-id="workspaceServers.selectedOperationId.value"
         :selected-server-id="workspaceServers.selectedServerId.value"
-        :selected-server="workspaceServers.selectedServer.value"
         :servers="workspaceServers.servers.value"
         :workspace="workspaceServers.workspace.value"
         @add-custom-request="addCustomRequest"
         @add-operation-request="addOperationRequest"
         @server-added="workspaceServers.addServer"
         @server-refreshed="serverRefreshed"
-        @server-variables-saved="workspaceServers.updateServerVariables"
-        @select-server="workspaceServers.selectedServerId.value = $event"
+        @configure-server="configureServer"
+        @select-server="selectServer"
         @select-custom="selectCustom"
         @select-operation="selectOperation"
       />
@@ -146,8 +161,14 @@ async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCoun
 
       <div class="resize-handle" title="Drag to resize sidebar" @mousedown="startColumnResize($event)"></div>
 
-      <section :class="['grid min-w-0 overflow-hidden bg-[var(--tapir-bg-panel-soft)] backdrop-blur-xl', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-rows] duration-300 ease-out']" :style="responseStyle">
+      <section :class="['grid min-w-0 overflow-hidden bg-[var(--tapir-bg-panel-soft)] backdrop-blur-xl', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-rows] duration-300 ease-out']" :style="workspaceView === 'requests' ? responseStyle : undefined">
+        <ServerConfiguration
+          v-if="workspaceView === 'serverConfiguration' && workspaceServers.selectedServer.value"
+          :server="workspaceServers.selectedServer.value"
+          @variables-saved="workspaceServers.updateServerVariables"
+        />
         <RequestWorkspace
+          v-else
           :active-draft="request.activeDraft.value"
           :active-request-tab="request.activeRequestTab.value"
           :can-send="request.canSend.value"
@@ -190,9 +211,10 @@ async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCoun
           @update-url="request.updateUrl"
         />
 
-        <div class="resize-handle horizontal" title="Drag to resize response" @mousedown="startResponseResize"></div>
+        <div v-if="workspaceView === 'requests'" class="resize-handle horizontal" title="Drag to resize response" @mousedown="startResponseResize"></div>
 
         <ResponsePanel
+          v-if="workspaceView === 'requests'"
           :collapsed="collapsedPanels.response"
           :pretty-body="request.prettyBody.value"
           :response-view="request.responseView.value"

@@ -106,6 +106,31 @@ describe("desktop renderer app", () => {
       url: "https://api.example.test/status"
     }));
   });
+
+  it("opens server configuration and saves variables outside the sidebar", async () => {
+    const wrapper = mountApp();
+    await settle();
+
+    await wrapper.find("button[title='Configure server']").trigger("click");
+    await settle();
+
+    expect(wrapper.text()).toContain("Server configuration");
+    expect(wrapper.text()).toContain("Variables");
+    expect(wrapper.find("button[title='Configure server']").exists()).toBe(true);
+    expect(wrapper.find("[title='Drag to resize response']").exists()).toBe(false);
+
+    await wrapper.findAll("button").find((button) => button.text().includes("Add variable"))?.trigger("click");
+    await wrapper.find("input[placeholder='baseUrl']").setValue("tenant");
+    await wrapper.findAll("input[placeholder='https://api.example.com']").at(-1)?.setValue("acme");
+    await wrapper.findAll("button").find((button) => button.text().includes("Save variables"))?.trigger("click");
+    await settle();
+
+    expect(bridge.saveServerVariables).toHaveBeenCalledWith({
+      serverId: "server-1",
+      variables: [{ key: "tenant", value: "acme" }]
+    });
+    expect(wrapper.text()).toContain("Variables saved.");
+  });
 });
 
 function mountApp(): VueWrapper {
@@ -153,7 +178,15 @@ function createMockBridge(): MockTapirBridge {
     addServer: vi.fn(),
     refreshServerSchema: vi.fn(),
     saveApiKeyHeader: vi.fn(),
-    saveServerVariables: vi.fn(),
+    saveServerVariables: vi.fn(async (input) => ({
+      variables: input.variables.map((variable: { id?: string; key: string; value: string }, index: number) => ({
+        ...variable,
+        id: variable.id ?? `variable-${index + 1}`,
+        serverInstanceId: "server-1",
+        createdAt: "2026-07-01T00:00:00.000Z",
+        updatedAt: "2026-07-01T00:00:00.000Z"
+      }))
+    })),
     listRequestDrafts: vi.fn(async () => state.drafts),
     createRequestDraft: vi.fn(async (input: CreateRequestDraftRequest) => {
       const draft = input.sourceType === "custom" ? customDraft(input) : openApiDraft(input);

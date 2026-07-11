@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { ChevronRight, Plus, RefreshCw, Save, Server, Trash2, Variable } from "lucide-vue-next";
-import type { NormalizedOperation, ServerVariable, ServerWithDefinition, Workspace } from "@tapir/core";
+import { ref, watch } from "vue";
+import { ChevronRight, Plus, RefreshCw, Server, Settings } from "lucide-vue-next";
+import type { NormalizedOperation, ServerWithDefinition, Workspace } from "@tapir/core";
 import { CUSTOM_OPERATION_ID } from "../composables/useOperationRequest";
 import { activeItemClass, eyebrowClass, fieldClass, iconButtonClass, itemClass, mutedTextClass, primaryActionClass, softTextClass, strongTextClass, subtleTextClass } from "../uiClasses";
 import { bridgeUnavailableMessage, getTapirBridge as getAvailableTapirBridge } from "../tapirBridge";
@@ -12,7 +12,6 @@ const props = defineProps<{
   operationsCount: number;
   selectedOperationId: string | null;
   selectedServerId: string | null;
-  selectedServer: ServerWithDefinition | null;
   servers: ServerWithDefinition[];
   workspace: Workspace | null;
 }>();
@@ -22,7 +21,7 @@ const emit = defineEmits<{
   addOperationRequest: [operation: NormalizedOperation];
   serverAdded: [server: ServerWithDefinition];
   serverRefreshed: [server: ServerWithDefinition, deprecatedDraftCount: number];
-  serverVariablesSaved: [serverId: string, variables: ServerVariable[]];
+  configureServer: [serverId: string];
   selectServer: [serverId: string];
   selectCustom: [];
   selectOperation: [operation: NormalizedOperation];
@@ -32,15 +31,8 @@ const baseUrl = ref("");
 const errorMessage = ref("");
 const schemaMessage = ref("");
 const isAddingServer = ref(false);
-const isSavingVariables = ref(false);
 const refreshingServerIds = ref(new Set<string>());
-const variableDrafts = ref<Array<{ id?: string; key: string; value: string }>>([]);
 const expandedServerId = ref<string | null>(props.selectedServerId);
-const selectedServer = computed(() => props.servers.find((item) => item.server.id === props.selectedServerId) ?? null);
-
-watch(selectedServer, (server) => {
-  variableDrafts.value = (server?.variables ?? []).map((variable) => ({ id: variable.id, key: variable.key, value: variable.value }));
-}, { immediate: true });
 
 watch(() => props.selectedServerId, (serverId, previousServerId) => {
   if (serverId !== previousServerId) expandedServerId.value = serverId;
@@ -70,39 +62,6 @@ async function addServer(): Promise<void> {
     errorMessage.value = toErrorMessage(error);
   } finally {
     isAddingServer.value = false;
-  }
-}
-
-function addVariable(): void {
-  variableDrafts.value = [...variableDrafts.value, { key: "", value: "" }];
-}
-
-function removeVariable(index: number): void {
-  variableDrafts.value = variableDrafts.value.filter((_variable, candidateIndex) => candidateIndex !== index);
-}
-
-async function saveVariables(): Promise<void> {
-  if (!props.selectedServerId) return;
-  errorMessage.value = "";
-  schemaMessage.value = "";
-  const tapir = getTapirBridge();
-  if (!tapir) return;
-  isSavingVariables.value = true;
-  try {
-    const result = await tapir.saveServerVariables({
-      serverId: props.selectedServerId,
-      variables: variableDrafts.value.map((variable) => ({
-        id: variable.id,
-        key: variable.key,
-        value: variable.value
-      }))
-    });
-    emit("serverVariablesSaved", props.selectedServerId, result.variables);
-    schemaMessage.value = "Variables saved.";
-  } catch (error) {
-    errorMessage.value = toErrorMessage(error);
-  } finally {
-    isSavingVariables.value = false;
   }
 }
 
@@ -166,7 +125,7 @@ function toErrorMessage(error: unknown): string {
 
       <div class="grid gap-2">
         <div v-for="item in servers" :key="item.server.id" class="grid gap-1">
-          <div :class="[itemClass, 'grid-cols-[17px_minmax(0,1fr)_24px_28px] items-center px-2 py-1.5', item.server.id === selectedServerId && activeItemClass, item.server.id === selectedServerId && 'sticky-server-header sticky top-0 z-10']">
+          <div :class="[itemClass, 'grid-cols-[17px_minmax(0,1fr)_24px_28px_28px] items-center px-2 py-1.5', item.server.id === selectedServerId && activeItemClass, item.server.id === selectedServerId && 'sticky-server-header sticky top-0 z-10']">
             <Server :size="17" />
             <button class="flex min-w-0 items-baseline gap-2 overflow-hidden text-left" :title="`${item.server.name} — ${item.server.baseUrl}`" @click="activateServer(item.server.id)">
               <strong class="truncate">{{ item.server.name }}</strong>
@@ -178,6 +137,9 @@ function toErrorMessage(error: unknown): string {
             <span v-else></span>
             <button :class="['grid size-7 place-items-center disabled:cursor-not-allowed disabled:opacity-60', iconButtonClass]" title="Refresh OpenAPI schema" :disabled="refreshingServerIds.has(item.server.id)" @click="refreshServer(item.server.id)">
               <RefreshCw :size="15" :class="refreshingServerIds.has(item.server.id) && 'animate-spin'" />
+            </button>
+            <button :class="['grid size-7 place-items-center', iconButtonClass]" title="Configure server" @click="emit('configureServer', item.server.id)">
+              <Settings :size="15" />
             </button>
           </div>
 
@@ -209,29 +171,6 @@ function toErrorMessage(error: unknown): string {
           </div>
         </div>
       </div>
-
-      <section v-if="selectedServer" class="mt-4 grid gap-2.5 border-t border-[var(--tapir-border)] pt-4">
-        <div class="flex items-center gap-2">
-          <Variable :size="15" :class="mutedTextClass" />
-          <h2 :class="['m-0 text-[13px] font-black', strongTextClass]">Variables</h2>
-          <button class="mini-button ml-auto" type="button" @click="addVariable"><Plus :size="14" /> Add</button>
-        </div>
-        <div class="grid gap-2">
-          <div v-for="(variable, index) in variableDrafts" :key="variable.id ?? index" class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32px] gap-2">
-            <input v-model="variable.key" :class="fieldClass" placeholder="baseUrl" />
-            <input v-model="variable.value" :class="fieldClass" placeholder="https://api.example.com" />
-            <button :class="['grid size-9 place-items-center', iconButtonClass]" title="Remove variable" type="button" @click="removeVariable(index)">
-              <Trash2 :size="15" />
-            </button>
-          </div>
-          <div v-if="variableDrafts.length === 0" :class="['rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-panel-muted)] p-3 text-[13px]', mutedTextClass]">No variables yet.</div>
-        </div>
-        <button :class="[primaryActionClass, 'h-9 w-full']" type="button" :disabled="isSavingVariables || !selectedServer" @click="saveVariables">
-          <RefreshCw v-if="isSavingVariables" :size="16" class="animate-spin" />
-          <Save v-else :size="16" />
-          Save variables
-        </button>
-      </section>
 
   </div>
 </template>
