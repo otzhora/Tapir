@@ -11,13 +11,55 @@ import type {
   OpenApiNormalizer,
   RequestDraft,
   RequestDraftRepository,
+  PreparedRequest,
+  SecretValue,
   ServerInstance,
   ServerRepository,
   ServerVariableRepository,
-  Workspace
+  Workspace,
+  UserAuthProfile
 } from "./index.js";
 
 describe("TapirApplicationService", () => {
+  it("saves, resolves, injects, redacts, and reloads server API key authentication", async () => {
+    const workspace = testWorkspace();
+    const servers = new MemoryServerRepository();
+    await servers.create({ id: "server-1", workspaceId: workspace.id, name: "Example API", baseUrl: "https://api.example.test", specUrl: "https://api.example.test/openapi.json", apiDefinitionSourceId: null });
+    const authProfiles = new MemoryAuthProfileRepository();
+    const historyEntries: Parameters<HistoryRepository["create"]>[0][] = [];
+    const executed: PreparedRequest[] = [];
+    const dependencies = {
+      workspace, servers, serverVariables: unusedServerVariables(), definitions: new MemoryDefinitionRepository(), authProfiles,
+      history: {
+        async create(input: Parameters<HistoryRepository["create"]>[0]) { historyEntries.push(input); return { ...input, id: "history-1", createdAt: "2026-07-01T00:00:00.000Z" }; },
+        async listForServer() { return []; }
+      },
+      requestDrafts: unusedRequestDrafts(), discovery: fixedDiscovery(), normalizer: fixedNormalizer(),
+      http: { async execute(request: PreparedRequest) { executed.push(request); return { status: 200, headers: {}, body: "ok", durationMs: 1 }; } }
+    };
+    const service = new TapirApplicationService(dependencies);
+    const operation = {
+      operationId: "secured", method: "GET" as const, path: "/secured", tags: [], parameters: [], requestBodyMediaTypes: [],
+      securityRequirements: [{ ApiKeyAuth: [] }], securitySchemes: [{ key: "ApiKeyAuth", type: "apiKey", name: "x-api-key", in: "header" as const }]
+    };
+
+    await expect(service.saveApiKeyHeader({ serverId: "server-1", headerName: "x-api-key", secretValue: "top-secret" })).resolves.toEqual({ type: "apiKeyHeader", headerName: "x-api-key", configured: true });
+    const preview = await service.previewOperation({ serverId: "server-1", operation, values: {} });
+    expect(preview.request.headers["x-api-key"]).toBe("********");
+    expect(preview.redactedRequest.headers["x-api-key"]).toBe("********");
+    expect(JSON.stringify(preview)).not.toContain("top-secret");
+
+    const result = await service.callOperation({ serverId: "server-1", operation, values: {} });
+    expect(executed[0]?.headers["x-api-key"]).toBe("top-secret");
+    expect(result.request.headers["x-api-key"]).toBe("********");
+    expect(historyEntries[0]?.requestSnapshotJson).toContain("********");
+    expect(historyEntries[0]?.requestSnapshotJson).not.toContain("top-secret");
+
+    const restarted = new TapirApplicationService(dependencies);
+    const initial = await restarted.getInitialState();
+    expect(initial.servers[0]?.authentication).toEqual({ type: "apiKeyHeader", headerName: "x-api-key", configured: true });
+    expect(JSON.stringify(initial)).not.toContain("top-secret");
+  });
   it("returns a narrow JSON-safe add-server response", async () => {
     const workspace: Workspace = {
       id: "workspace-1",
@@ -236,6 +278,23 @@ describe("TapirApplicationService", () => {
   });
 });
 
+class MemoryAuthProfileRepository implements AuthProfileRepository {
+  private stored: { profile: UserAuthProfile; secret: SecretValue } | null = null;
+  async upsertApiKeyHeader(input: { workspaceId: string; serverInstanceId: string; name: string; headerName: string; secretValue: string }) {
+    const now = "2026-07-01T00:00:00.000Z";
+    this.stored = {
+      profile: { id: "auth-1", workspaceId: input.workspaceId, serverInstanceId: input.serverInstanceId, name: input.name, type: "apiKeyHeader", configJson: JSON.stringify({ headerName: input.headerName }), secretRef: "secret-1", createdAt: now, updatedAt: now },
+      secret: { id: "secret-1", authProfileId: "auth-1", encryptedOrPlainValue: input.secretValue, createdAt: now, updatedAt: now }
+    };
+    return this.stored.profile;
+  }
+  async getForServer(serverInstanceId: string) { return this.stored?.profile.serverInstanceId === serverInstanceId ? this.stored : null; }
+}
+
+function testWorkspace(): Workspace {
+  return { id: "workspace-1", name: "Local Workspace", createdAt: "2026-07-01T00:00:00.000Z", updatedAt: "2026-07-01T00:00:00.000Z" };
+}
+
 class MemoryServerRepository implements ServerRepository {
   private servers: ServerInstance[] = [];
 
@@ -335,7 +394,7 @@ function unusedAuthProfiles(): AuthProfileRepository {
       throw new Error("Not used.");
     },
     async getForServer() {
-      throw new Error("Not used.");
+      return null;
     }
   };
 }

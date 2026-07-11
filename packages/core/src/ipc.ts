@@ -9,7 +9,6 @@ import type {
   RequestDraftParameter,
   ServerInstance,
   ServerVariable,
-  UserAuthProfile,
   Workspace
 } from "./index";
 
@@ -17,6 +16,13 @@ export interface ServerWithDefinition {
   server: ServerInstance;
   definition: NormalizedApiDefinition | null;
   variables: ServerVariable[];
+  authentication: ServerAuthenticationConfiguration | null;
+}
+
+export interface ServerAuthenticationConfiguration {
+  type: "apiKeyHeader";
+  headerName: string;
+  configured: true;
 }
 
 export interface InitialStateResponse {
@@ -65,8 +71,6 @@ export interface CallOperationRequest {
   values: Record<string, string>;
   body?: string;
   contentType?: string;
-  apiKeyHeaderName?: string;
-  apiKeyValue?: string;
 }
 
 export interface CallOperationResponse {
@@ -142,7 +146,7 @@ export interface TapirIpcContract {
   };
   "tapir:saveApiKeyHeader": {
     request: SaveApiKeyHeaderRequest;
-    response: UserAuthProfile;
+    response: ServerAuthenticationConfiguration;
   };
   "tapir:saveServerVariables": {
     request: SaveServerVariablesRequest;

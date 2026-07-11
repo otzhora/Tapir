@@ -54,7 +54,7 @@ async function addServer(): Promise<void> {
   isAddingServer.value = true;
   try {
     const result = await tapir.addServer(baseUrl.value);
-    const server = { server: result.server, definition: result.normalized, variables: [] };
+    const server = { server: result.server, definition: result.normalized, variables: [], authentication: null };
     emit("serverAdded", server);
     emit("selectServer", result.server.id);
     baseUrl.value = "";
@@ -74,7 +74,7 @@ async function refreshServer(serverId: string): Promise<void> {
   try {
     const result = await tapir.refreshServerSchema(serverId);
     const existing = props.servers.find((item) => item.server.id === serverId);
-    const server = { server: result.server, definition: result.normalized, variables: existing?.variables ?? [] };
+    const server = { server: result.server, definition: result.normalized, variables: existing?.variables ?? [], authentication: existing?.authentication ?? null };
     emit("serverRefreshed", server, result.deprecatedDrafts.length);
     schemaMessage.value = result.deprecatedDrafts.length > 0
       ? `Schema refreshed. ${result.deprecatedDrafts.length} saved request${result.deprecatedDrafts.length === 1 ? "" : "s"} moved to Custom.`

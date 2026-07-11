@@ -12,6 +12,7 @@ import type {
   RefreshServerSchemaRequest,
   RefreshServerSchemaResponse,
   SaveApiKeyHeaderRequest,
+  ServerAuthenticationConfiguration,
   SaveServerVariablesRequest,
   SaveServerVariablesResponse,
   UpdateRequestDraftRequest
@@ -21,6 +22,7 @@ import type {
   HistoryRepository,
   HttpExecutor,
   NormalizedApiDefinition,
+  NormalizedOperation,
   OpenApiDiscoveryService,
   OpenApiNormalizer,
   RequestDraft,
@@ -51,12 +53,18 @@ export class TapirApplicationService {
   constructor(private dependencies: TapirApplicationDependencies) {}
 
   async getInitialState(): Promise<InitialStateResponse> {
-    const { definitions, servers, serverVariables, workspace } = this.dependencies;
+    const { authProfiles, definitions, servers, serverVariables, workspace } = this.dependencies;
     const serverInstances = await servers.list(workspace.id);
     const enriched = await Promise.all(serverInstances.map(async (server) => {
       const definition = await definitions.latestForServer(server.id);
       const variables = await serverVariables.listForServer(server.id);
-      return { server, definition: definition ? JSON.parse(definition.normalizedJson) as NormalizedApiDefinition : null, variables };
+      const auth = await authProfiles.getForServer(server.id);
+      return {
+        server,
+        definition: definition ? JSON.parse(definition.normalizedJson) as NormalizedApiDefinition : null,
+        variables,
+        authentication: auth ? authenticationConfiguration(auth.profile.configJson) : null
+      };
     }));
     return { workspace, servers: enriched };
   }
@@ -138,15 +146,20 @@ export class TapirApplicationService {
     return { server: refreshedServer, normalized, deprecatedDrafts };
   }
 
-  async saveApiKeyHeader(input: SaveApiKeyHeaderRequest) {
+  async saveApiKeyHeader(input: SaveApiKeyHeaderRequest): Promise<ServerAuthenticationConfiguration> {
     const { authProfiles, workspace } = this.dependencies;
-    return authProfiles.upsertApiKeyHeader({
+    await this.requireWorkspaceServer(input.serverId);
+    const headerName = input.headerName.trim();
+    if (!headerName) throw new Error("API key header name is required.");
+    if (!input.secretValue) throw new Error("API key value is required.");
+    const profile = await authProfiles.upsertApiKeyHeader({
       workspaceId: workspace.id,
       serverInstanceId: input.serverId,
-      name: input.headerName,
-      headerName: input.headerName,
+      name: headerName,
+      headerName,
       secretValue: input.secretValue
     });
+    return authenticationConfiguration(profile.configJson);
   }
 
   async saveServerVariables(input: SaveServerVariablesRequest): Promise<SaveServerVariablesResponse> {
@@ -168,7 +181,7 @@ export class TapirApplicationService {
     if (!server) throw new Error("Server not found.");
 
     const variables = await serverVariables.listForServer(server.id);
-    const prepared = prepareOperationRequest(server.baseUrl, { ...input, variables });
+    const prepared = prepareOperationRequest(server.baseUrl, { ...input, variables, ...await this.operationAuthentication(server.id, input.operation) });
     if (prepared.validationIssues.length > 0) {
       throw new Error(prepared.validationIssues.map((issue) => issue.message).join(" "));
     }
@@ -195,7 +208,8 @@ export class TapirApplicationService {
     const server = serverInstances.find((candidate) => candidate.id === input.serverId);
     if (!server) throw new Error("Server not found.");
     const variables = await serverVariables.listForServer(server.id);
-    return prepareOperationRequest(server.baseUrl, { ...input, variables });
+    const prepared = prepareOperationRequest(server.baseUrl, { ...input, variables, ...await this.operationAuthentication(server.id, input.operation) });
+    return { ...prepared, request: prepared.redactedRequest };
   }
 
   async listHistory(serverId: string) {
@@ -296,6 +310,17 @@ export class TapirApplicationService {
     return draft;
   }
 
+  private async operationAuthentication(serverId: string, operation: NormalizedOperation) {
+    const supported = operation.securitySchemes.find((scheme) => scheme.type === "apiKey" && scheme.in === "header");
+    const required = supported && operation.securityRequirements.some((requirement) => supported.key in requirement);
+    if (!supported || !required) return {};
+    const stored = await this.dependencies.authProfiles.getForServer(serverId);
+    if (!stored) return {};
+    const configuration = authenticationConfiguration(stored.profile.configJson);
+    if (configuration.headerName.toLowerCase() !== supported.name?.toLowerCase()) return {};
+    return { apiKeyHeaderName: configuration.headerName, apiKeyValue: stored.secret.encryptedOrPlainValue };
+  }
+
   private async deprecateChangedOpenApiDrafts(
     server: { id: string; baseUrl: string },
     previous: NormalizedApiDefinition,
@@ -331,6 +356,12 @@ export class TapirApplicationService {
 
     return deprecated;
   }
+}
+
+function authenticationConfiguration(configJson: string): ServerAuthenticationConfiguration {
+  const parsed = JSON.parse(configJson) as { headerName?: unknown };
+  if (typeof parsed.headerName !== "string" || !parsed.headerName.trim()) throw new Error("Saved API key header configuration is invalid.");
+  return { type: "apiKeyHeader", headerName: parsed.headerName, configured: true };
 }
 
 function customUrlFromDraft(baseUrl: string, draft: RequestDraft): string {

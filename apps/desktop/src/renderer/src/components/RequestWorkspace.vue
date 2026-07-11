@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { AlertCircle, Clipboard, Database, Eye, FileJson2, Plus, Send, TerminalSquare, X } from "lucide-vue-next";
-import type { NormalizedOperation, PreparedOperationRequest, RequestDraft, RequestDraftHeader, RequestDraftParameter, ServerWithDefinition } from "@tapir/core";
+import type { NormalizedOperation, PreparedOperationRequest, RequestDraft, RequestDraftHeader, RequestDraftParameter, ServerAuthenticationConfiguration, ServerWithDefinition } from "@tapir/core";
 import type { RequestTab, RequestTabItem } from "../types";
 import { eyebrowClass, fieldClass, iconButtonClass, mutedTextClass, primaryActionClass, softTextClass, strongTextClass } from "../uiClasses";
 import JsonCodeEditor from "./JsonCodeEditor.vue";
@@ -11,6 +11,7 @@ type ValidationIssue = { field: string; message: string };
 
 const props = defineProps<{
   activeDraft: RequestDraft | null;
+  authentication: ServerAuthenticationConfiguration | null;
   activeRequestTab: RequestTab;
   canSend: boolean;
   curlCommand: string;
@@ -41,6 +42,7 @@ const emit = defineEmits<{
   createDraft: [];
   removeHeader: [id: string];
   removeParameter: [id: string];
+  saveApiKey: [headerName: string, secretValue: string];
   selectDraft: [draftId: string];
   setParameter: [id: string, value: string];
   toggleHeader: [id: string, enabled: boolean];
@@ -56,6 +58,11 @@ const emit = defineEmits<{
 }>();
 
 const methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
+const credentialValue = ref("");
+const apiKeyScheme = computed(() => props.selectedOperation?.securitySchemes.find((scheme) => scheme.type === "apiKey" && scheme.in === "header") ?? null);
+const apiKeyRequired = computed(() => Boolean(apiKeyScheme.value && props.selectedOperation?.securityRequirements.some((requirement) => apiKeyScheme.value!.key in requirement)));
+const configuredForOperation = computed(() => Boolean(props.authentication && apiKeyScheme.value?.name && props.authentication.headerName.toLowerCase() === apiKeyScheme.value.name.toLowerCase()));
+watch(() => props.selectedServer?.server.id, () => { credentialValue.value = ""; });
 
 function inputValue(event: Event): string {
   return (event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value;
@@ -208,6 +215,22 @@ function isJsonMediaType(value: string): boolean {
           </section>
 
           <section v-else-if="activeRequestTab === 'auth'" class="grid gap-3">
+            <div v-if="selectedOperation && !isCustomSpace" class="grid gap-3 rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)] p-4">
+              <div>
+                <strong :class="strongTextClass">Authentication</strong>
+                <p :class="['mt-1 text-[13px]', mutedTextClass]">
+                  <template v-if="apiKeyRequired && apiKeyScheme">Required: API key in <code>{{ apiKeyScheme.name }}</code> header.</template>
+                  <template v-else>No supported authentication is required by this operation.</template>
+                </p>
+              </div>
+              <template v-if="apiKeyRequired && apiKeyScheme">
+                <div v-if="configuredForOperation && authentication" class="text-[13px] font-bold text-[var(--tapir-success)]">Credential configured for {{ authentication.headerName }}. The value stays in the main process.</div>
+                <div class="grid gap-2 md:grid-cols-[1fr_auto]">
+                  <input v-model="credentialValue" type="password" :class="fieldClass" :placeholder="configuredForOperation ? 'Replace configured credential' : 'API key'" autocomplete="new-password" />
+                  <button class="mini-button" :disabled="!credentialValue" @click="emit('saveApiKey', apiKeyScheme.name || '', credentialValue); credentialValue = ''">{{ configuredForOperation ? "Replace credential" : "Save credential" }}</button>
+                </div>
+              </template>
+            </div>
             <div class="flex justify-end">
               <button class="mini-button" @click="emit('addHeader')"><Plus :size="15" /> Header</button>
             </div>

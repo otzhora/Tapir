@@ -2,6 +2,8 @@
 
 Dependency-free Node fixture for testing Tapir against a realistic hand-authored OpenAPI document.
 
+`GET /auth/api-key` requires `x-api-key: tapir-node-secret`. Override it with `TAPIR_FIXTURE_API_KEY`.
+
 The schema intentionally covers common Swagger/OpenAPI features such as reusable parameters and
 responses, API key and bearer auth, server variables, pagination envelopes, polymorphic responses,
 `oneOf`, `allOf`, discriminators, nullable fields, multipart uploads, callbacks, links, cookies,

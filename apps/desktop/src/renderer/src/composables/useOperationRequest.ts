@@ -454,6 +454,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     requestBodySchema,
     requestPreview,
     requestTabs,
+    refreshPreview,
     responseView,
     responsesSchema,
     restoreHistory,

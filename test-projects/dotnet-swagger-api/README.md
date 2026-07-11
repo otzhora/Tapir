@@ -2,6 +2,8 @@
 
 ASP.NET Core fixture for testing Tapir against a realistic Swashbuckle-generated OpenAPI document.
 
+`GET /auth/api-key` requires `x-api-key: tapir-dotnet-secret`. Override it with `TAPIR_FIXTURE_API_KEY`.
+
 The API uses typed minimal endpoints so the emitted schema includes framework-generated shapes for
 nested records, enums, arrays, dictionaries, nullable values, validation attributes, typed request
 bodies, route/query/header/form parameters, multipart uploads, multiple response types, and security

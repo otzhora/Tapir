@@ -1,6 +1,7 @@
 import http from "node:http";
 
 const port = Number.parseInt(process.env.PORT ?? "5051", 10);
+const fixtureApiKey = process.env.TAPIR_FIXTURE_API_KEY ?? "tapir-node-secret";
 
 const animals = [
   {
@@ -109,6 +110,33 @@ const openApiDocument = {
               }
             }
           }
+        }
+      }
+    },
+    "/auth/api-key": {
+      get: {
+        operationId: "getApiKeyIdentity",
+        summary: "Verify an API key",
+        description: "Requires the x-api-key header. The local fixture accepts tapir-node-secret by default.",
+        tags: ["System"],
+        security: [{ ApiKeyAuth: [] }],
+        responses: {
+          200: {
+            description: "Authenticated fixture identity",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["authenticated", "scheme"],
+                  properties: {
+                    authenticated: { type: "boolean" },
+                    scheme: { type: "string" }
+                  }
+                }
+              }
+            }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" }
         }
       }
     },
@@ -966,6 +994,15 @@ const server = http.createServer(async (request, response) => {
         uptimeSeconds: Math.round(process.uptime()),
         dependencies: { database: "ok", objectStorage: "ok" }
       }, { "x-request-id": "00000000-0000-4000-8000-000000000000" });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/auth/api-key") {
+      if (request.headers["x-api-key"] !== fixtureApiKey) {
+        sendJson(response, 401, problem(401, "Unauthorized", "Provide the fixture API key in the x-api-key header."));
+        return;
+      }
+      sendJson(response, 200, { authenticated: true, scheme: "apiKey" });
       return;
     }
 

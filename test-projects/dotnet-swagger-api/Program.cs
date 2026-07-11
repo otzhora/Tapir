@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+var fixtureApiKey = builder.Configuration["TAPIR_FIXTURE_API_KEY"] ?? "tapir-dotnet-secret";
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -44,21 +45,7 @@ builder.Services.AddSwaggerGen(options =>
         Name = "x-api-key",
         Description = "Static API key for fixture clients."
     });
-    options.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        [
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
-            }
-        ] = Array.Empty<string>(),
-        [
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "ApiKey" }
-            }
-        ] = Array.Empty<string>()
-    });
+    options.OperationFilter<ApiKeyOperationFilter>();
 });
 
 var app = builder.Build();
@@ -105,6 +92,19 @@ app.MapGet("/health", () => Results.Ok(new HealthResponse(
     .WithTags("System")
     .WithSummary("Get API health")
     .Produces<HealthResponse>();
+
+app.MapGet("/auth/api-key", ([FromHeader(Name = "x-api-key")] string? apiKey) =>
+        apiKey == fixtureApiKey
+            ? Results.Ok(new AuthenticatedIdentity(true, "apiKey"))
+            : Results.Json(
+                new ProblemDetails { Title = "Unauthorized", Detail = "Provide the fixture API key in the x-api-key header.", Status = StatusCodes.Status401Unauthorized },
+                statusCode: StatusCodes.Status401Unauthorized))
+    .WithName("GetApiKeyIdentity")
+    .WithTags("System")
+    .WithSummary("Verify an API key")
+    .WithDescription("Requires the x-api-key header. The local fixture accepts tapir-dotnet-secret by default.")
+    .Produces<AuthenticatedIdentity>()
+    .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
 
 app.MapGet("/weather", (
         [FromQuery] string? city,
@@ -263,6 +263,23 @@ public sealed record Address(
     [property: Required] string Region,
     [property: Required] string PostalCode,
     [property: StringLength(2, MinimumLength = 2)] string CountryCode);
+
+public sealed record AuthenticatedIdentity(bool Authenticated, string Scheme);
+
+public sealed class ApiKeyOperationFilter : Swashbuckle.AspNetCore.SwaggerGen.IOperationFilter
+{
+    public void Apply(OpenApiOperation operation, Swashbuckle.AspNetCore.SwaggerGen.OperationFilterContext context)
+    {
+        if (operation.OperationId != "GetApiKeyIdentity") return;
+        operation.Security = new List<OpenApiSecurityRequirement>
+        {
+            new()
+            {
+                [new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "ApiKey" } }] = Array.Empty<string>()
+            }
+        };
+    }
+}
 
 public sealed record CreateShipmentRequest(
     [property: Required] Party Sender,

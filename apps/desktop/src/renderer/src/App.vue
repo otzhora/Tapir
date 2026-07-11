@@ -95,6 +95,16 @@ function selectServer(serverId: string): void {
   workspaceServers.selectedServerId.value = serverId;
 }
 
+async function saveApiKey(headerName: string, secretValue: string): Promise<void> {
+  const selected = workspaceServers.selectedServer.value;
+  if (!selected) return;
+  const tapir = window.tapir;
+  if (!tapir) return;
+  const authentication = await tapir.saveApiKeyHeader({ serverId: selected.server.id, headerName, secretValue });
+  workspaceServers.updateServer({ ...selected, authentication });
+  await request.refreshPreview();
+}
+
 function configureServer(serverId: string): void {
   workspaceServers.selectedServerId.value = serverId;
   workspaceView.value = "serverConfiguration";
@@ -170,6 +180,7 @@ async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCoun
         <RequestWorkspace
           v-else
           :active-draft="request.activeDraft.value"
+          :authentication="workspaceServers.selectedServer.value?.authentication ?? null"
           :active-request-tab="request.activeRequestTab.value"
           :can-send="request.canSend.value"
           :curl-command="request.curlCommand.value"
@@ -197,6 +208,7 @@ async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCoun
           @create-draft="request.isCustomSpace.value ? request.createCustomRequest() : workspaceServers.selectedOperation.value && request.createOpenApiRequest(workspaceServers.selectedOperation.value)"
           @remove-header="request.removeHeader"
           @remove-parameter="request.removeParameter"
+          @save-api-key="saveApiKey"
           @select-draft="request.selectDraft"
           @set-parameter="request.setParameterValue"
           @toggle-header="request.toggleHeader"
