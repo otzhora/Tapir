@@ -1,29 +1,22 @@
 <script setup lang="ts">
-import { ChevronRight, RotateCcw } from "lucide-vue-next";
+import { RotateCcw } from "lucide-vue-next";
 import type { CallHistoryEntry } from "@tapir/core";
-import { eyebrowClass, iconButtonClass, mutedTextClass, panelClass } from "../uiClasses";
+import { eyebrowClass, mutedTextClass } from "../uiClasses";
 
 defineProps<{
-  collapsed: boolean;
   history: CallHistoryEntry[];
 }>();
 
 const emit = defineEmits<{
-  collapse: [value: boolean];
   restoreHistory: [entry: CallHistoryEntry];
 }>();
 </script>
 
 <template>
-  <aside v-if="!collapsed" :class="[panelClass, 'grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden']">
+  <div class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
     <div :class="[eyebrowClass, 'mb-3.5 flex items-center justify-between']">
       <span>History</span>
-      <span class="inline-flex items-center gap-2">
-        <strong>{{ history.length }}</strong>
-        <button :class="iconButtonClass" title="Collapse history" @click="emit('collapse', true)">
-          <ChevronRight :size="17" />
-        </button>
-      </span>
+      <strong>{{ history.length }}</strong>
     </div>
     <div class="min-h-0 overflow-auto">
       <div v-if="history.length === 0" :class="['pt-2', mutedTextClass]">No calls yet.</div>
@@ -34,8 +27,5 @@ const emit = defineEmits<{
         <small :class="['col-span-2 col-start-2', mutedTextClass]">{{ entry.durationMs ?? 0 }} ms · {{ new Date(entry.createdAt).toLocaleString() }}</small>
       </button>
     </div>
-  </aside>
-  <button v-else :class="['grid min-w-0 place-items-start border-l border-[var(--tapir-border)] bg-[var(--tapir-bg-panel)] px-2 pt-7 backdrop-blur-xl', mutedTextClass]" title="Expand history" @click="emit('collapse', false)">
-    <RotateCcw :size="20" />
-  </button>
+  </div>
 </template>

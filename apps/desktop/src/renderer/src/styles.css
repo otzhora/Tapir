@@ -5,6 +5,7 @@
   --tapir-bg: #151515;
   --tapir-bg-shell: #171717;
   --tapir-bg-panel: rgba(31, 31, 31, 0.7);
+  --tapir-bg-panel-opaque: #1f1f1f;
   --tapir-bg-panel-strong: rgba(32, 32, 32, 0.78);
   --tapir-bg-panel-soft: rgba(24, 24, 24, 0.82);
   --tapir-bg-panel-muted: rgba(24, 24, 24, 0.72);
@@ -189,6 +190,26 @@ button:disabled {
 
 .app-shell.is-dragging {
   transition: none;
+}
+
+.sticky-server-header {
+  isolation: isolate;
+  background: var(--tapir-bg-panel-opaque);
+  box-shadow:
+    0 1px 0 var(--tapir-border),
+    0 10px 14px var(--tapir-bg-panel-opaque);
+  backdrop-filter: none;
+}
+
+.sticky-server-header::before {
+  content: "";
+  position: absolute;
+  right: -12px;
+  bottom: calc(100% - 1px);
+  left: -12px;
+  height: 15px;
+  background: var(--tapir-bg-panel-opaque);
+  pointer-events: none;
 }
 
 .resize-handle {

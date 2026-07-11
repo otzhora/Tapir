@@ -1,40 +1,30 @@
 import { computed, reactive, ref } from "vue";
 import type { CollapsedPanels } from "../types";
 
-type ColumnPanel = "servers" | "operations" | "history";
-
 export function useResizablePanels() {
-  const leftWidth = ref(200);
-  const operationsWidth = ref(220);
-  const historyWidth = ref(180);
+  const leftWidth = ref(320);
   const responseHeight = ref(260);
   const isResizingLayout = ref(false);
-  const collapsedPanels = reactive<CollapsedPanels>({ servers: false, operations: false, history: false, response: false });
+  const collapsedPanels = reactive<CollapsedPanels>({ operations: false, response: false });
 
   const shellStyle = computed(() => ({
-    gridTemplateColumns: `${collapsedPanels.servers ? 44 : leftWidth.value}px 6px ${collapsedPanels.operations ? 44 : operationsWidth.value}px 6px minmax(260px, 1fr) 6px ${collapsedPanels.history ? 44 : historyWidth.value}px`
+    gridTemplateColumns: `${leftWidth.value}px 6px minmax(260px, 1fr)`
   }));
 
   const responseStyle = computed(() => ({
     gridTemplateRows: `minmax(280px, 1fr) 6px ${collapsedPanels.response ? 44 : responseHeight.value}px`
   }));
 
-  function startColumnResize(target: ColumnPanel, event: MouseEvent): void {
+  function startColumnResize(event: MouseEvent): void {
     const startX = event.clientX;
-    const startWidths = { left: leftWidth.value, operations: operationsWidth.value, history: historyWidth.value };
-    collapsedPanels[target] = false;
+    const startWidth = leftWidth.value;
 
     const onMove = (moveEvent: MouseEvent) => {
       const delta = moveEvent.clientX - startX;
-      if (target === "servers") leftWidth.value = clamp(startWidths.left + delta, 44, 340);
-      if (target === "operations") operationsWidth.value = clamp(startWidths.operations + delta, 44, 400);
-      if (target === "history") historyWidth.value = clamp(startWidths.history - delta, 44, 340);
+      leftWidth.value = clamp(startWidth + delta, 240, 440);
     };
 
     const onUp = () => {
-      if (target === "servers") settlePanel("servers", leftWidth, 160);
-      if (target === "operations") settlePanel("operations", operationsWidth, 180);
-      if (target === "history") settlePanel("history", historyWidth, 160);
       stopResizing(onMove, onUp);
     };
 

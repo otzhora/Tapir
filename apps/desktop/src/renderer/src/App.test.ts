@@ -69,8 +69,9 @@ describe("desktop renderer app", () => {
     }));
     expect(wrapper.text()).toContain("200");
     expect(wrapper.findAll("textarea").some((textarea) => (textarea.element as HTMLTextAreaElement).value.includes("\"pets\""))).toBe(true);
+    await wrapper.findAll("button").find((button) => button.text().includes("History"))?.trigger("click");
+    await nextTick();
     expect(wrapper.text()).toContain("listPets");
-
     await wrapper.find("button[title='Restore request']").trigger("click");
     await settle();
 

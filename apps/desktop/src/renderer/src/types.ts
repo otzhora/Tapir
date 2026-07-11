@@ -1,6 +1,6 @@
 export type RequestTab = "params" | "auth" | "body" | "schema" | "preview";
 
-export type CollapsiblePanel = "servers" | "operations" | "history" | "response";
+export type CollapsiblePanel = "operations" | "response";
 
 export type CollapsedPanels = Record<CollapsiblePanel, boolean>;
 

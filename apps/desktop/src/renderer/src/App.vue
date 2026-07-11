@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from "vue";
+import { History as HistoryIcon, Server as ServerIcon } from "lucide-vue-next";
 import type { CallHistoryEntry, NormalizedOperation, ServerWithDefinition } from "@tapir/core";
 import AppHeader from "./components/AppHeader.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
-import OperationsPanel from "./components/OperationsPanel.vue";
 import RequestWorkspace from "./components/RequestWorkspace.vue";
 import ResponsePanel from "./components/ResponsePanel.vue";
 import ServersPanel from "./components/ServersPanel.vue";
@@ -11,9 +11,11 @@ import { CUSTOM_OPERATION_ID, useOperationRequest } from "./composables/useOpera
 import { useResizablePanels } from "./composables/useResizablePanels";
 import { useWorkspaceServers } from "./composables/useWorkspaceServers";
 import { bridgeUnavailableMessage, getTapirBridge } from "./tapirBridge";
+import { panelClass } from "./uiClasses";
 
 const errorMessage = ref("");
 const history = ref<CallHistoryEntry[]>([]);
+const sidebarView = ref<"servers" | "history">("servers");
 
 const {
   collapsedPanels,
@@ -94,51 +96,55 @@ async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCoun
   }
 }
 
-function togglePanel(panel: "servers" | "operations" | "history"): void {
-  collapsedPanels[panel] = !collapsedPanels[panel];
-}
 </script>
 
 <template>
   <div class="flex h-screen min-w-0 flex-col overflow-hidden bg-[var(--tapir-bg)] text-[var(--tapir-text)]">
     <AppHeader
-      :collapsed-panels="collapsedPanels"
       :operations-count="workspaceServers.operations.value.length"
       :selected-server="workspaceServers.selectedServer.value"
       :servers-count="workspaceServers.servers.value.length"
       :workspace="workspaceServers.workspace.value"
-      @toggle-panel="togglePanel"
     />
 
     <main :class="['app-shell grid min-h-0 flex-1 text-[var(--tapir-text)]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-columns] duration-300 ease-out']" :style="shellStyle">
+      <aside :class="[panelClass, 'grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden']">
+        <div class="mb-4 grid grid-cols-2 gap-1 rounded-lg border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-control)] p-1" aria-label="Sidebar view">
+          <button class="chrome-button justify-center" :class="sidebarView === 'servers' && 'is-active'" type="button" @click="sidebarView = 'servers'">
+            <ServerIcon :size="15" /> Servers
+          </button>
+          <button class="chrome-button justify-center" :class="sidebarView === 'history' && 'is-active'" type="button" @click="sidebarView = 'history'">
+            <HistoryIcon :size="15" /> History
+          </button>
+        </div>
+        <div class="min-h-0 overflow-auto">
       <ServersPanel
-        :collapsed="collapsedPanels.servers"
+        v-if="sidebarView === 'servers'"
+        :grouped-operations="workspaceServers.groupedOperations.value"
+        :operations-count="workspaceServers.operations.value.length"
+        :selected-operation-id="workspaceServers.selectedOperationId.value"
         :selected-server-id="workspaceServers.selectedServerId.value"
+        :selected-server="workspaceServers.selectedServer.value"
         :servers="workspaceServers.servers.value"
         :workspace="workspaceServers.workspace.value"
-        @collapse="collapsedPanels.servers = $event"
+        @add-custom-request="addCustomRequest"
+        @add-operation-request="addOperationRequest"
         @server-added="workspaceServers.addServer"
         @server-refreshed="serverRefreshed"
         @server-variables-saved="workspaceServers.updateServerVariables"
         @select-server="workspaceServers.selectedServerId.value = $event"
-      />
-
-      <div class="resize-handle" title="Drag to resize servers" @mousedown="startColumnResize('servers', $event)"></div>
-
-      <OperationsPanel
-        :collapsed="collapsedPanels.operations"
-        :grouped-operations="workspaceServers.groupedOperations.value"
-        :operations-count="workspaceServers.operations.value.length"
-        :selected-operation-id="workspaceServers.selectedOperationId.value"
-        :selected-server="workspaceServers.selectedServer.value"
-        @add-custom-request="addCustomRequest"
-        @add-operation-request="addOperationRequest"
-        @collapse="collapsedPanels.operations = $event"
         @select-custom="selectCustom"
         @select-operation="selectOperation"
       />
+      <HistoryPanel
+        v-else
+        :history="history"
+        @restore-history="request.restoreHistory"
+      />
+        </div>
+      </aside>
 
-      <div class="resize-handle" title="Drag to resize operations" @mousedown="startColumnResize('operations', $event)"></div>
+      <div class="resize-handle" title="Drag to resize sidebar" @mousedown="startColumnResize($event)"></div>
 
       <section :class="['grid min-w-0 overflow-hidden bg-[var(--tapir-bg-panel-soft)] backdrop-blur-xl', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-rows] duration-300 ease-out']" :style="responseStyle">
         <RequestWorkspace
@@ -194,14 +200,6 @@ function togglePanel(panel: "servers" | "operations" | "history"): void {
         />
       </section>
 
-      <div class="resize-handle" :class="collapsedPanels.history && 'is-hidden-edge'" title="Drag to resize history" @mousedown="startColumnResize('history', $event)"></div>
-
-      <HistoryPanel
-        :collapsed="collapsedPanels.history"
-        :history="history"
-        @collapse="collapsedPanels.history = $event"
-        @restore-history="request.restoreHistory"
-      />
     </main>
   </div>
 </template>

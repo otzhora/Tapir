@@ -1,23 +1,31 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { ChevronLeft, Plus, RefreshCw, Save, Server, Trash2, Variable } from "lucide-vue-next";
-import type { ServerVariable, ServerWithDefinition, Workspace } from "@tapir/core";
-import { activeItemClass, eyebrowClass, fieldClass, iconButtonClass, itemClass, mutedTextClass, panelClass, primaryActionClass, strongTextClass } from "../uiClasses";
+import { ChevronRight, Plus, RefreshCw, Save, Server, Trash2, Variable } from "lucide-vue-next";
+import type { NormalizedOperation, ServerVariable, ServerWithDefinition, Workspace } from "@tapir/core";
+import { CUSTOM_OPERATION_ID } from "../composables/useOperationRequest";
+import { activeItemClass, eyebrowClass, fieldClass, iconButtonClass, itemClass, mutedTextClass, primaryActionClass, softTextClass, strongTextClass, subtleTextClass } from "../uiClasses";
 import { bridgeUnavailableMessage, getTapirBridge as getAvailableTapirBridge } from "../tapirBridge";
+import MethodBadge from "./MethodBadge.vue";
 
 const props = defineProps<{
-  collapsed: boolean;
+  groupedOperations: Array<{ name: string; items: NormalizedOperation[] }>;
+  operationsCount: number;
+  selectedOperationId: string | null;
   selectedServerId: string | null;
+  selectedServer: ServerWithDefinition | null;
   servers: ServerWithDefinition[];
   workspace: Workspace | null;
 }>();
 
 const emit = defineEmits<{
-  collapse: [value: boolean];
+  addCustomRequest: [];
+  addOperationRequest: [operation: NormalizedOperation];
   serverAdded: [server: ServerWithDefinition];
   serverRefreshed: [server: ServerWithDefinition, deprecatedDraftCount: number];
   serverVariablesSaved: [serverId: string, variables: ServerVariable[]];
   selectServer: [serverId: string];
+  selectCustom: [];
+  selectOperation: [operation: NormalizedOperation];
 }>();
 
 const baseUrl = ref("");
@@ -27,11 +35,25 @@ const isAddingServer = ref(false);
 const isSavingVariables = ref(false);
 const refreshingServerIds = ref(new Set<string>());
 const variableDrafts = ref<Array<{ id?: string; key: string; value: string }>>([]);
+const expandedServerId = ref<string | null>(props.selectedServerId);
 const selectedServer = computed(() => props.servers.find((item) => item.server.id === props.selectedServerId) ?? null);
 
 watch(selectedServer, (server) => {
   variableDrafts.value = (server?.variables ?? []).map((variable) => ({ id: variable.id, key: variable.key, value: variable.value }));
 }, { immediate: true });
+
+watch(() => props.selectedServerId, (serverId, previousServerId) => {
+  if (serverId !== previousServerId) expandedServerId.value = serverId;
+});
+
+function activateServer(serverId: string): void {
+  if (serverId === props.selectedServerId) {
+    expandedServerId.value = expandedServerId.value === serverId ? null : serverId;
+    return;
+  }
+  expandedServerId.value = serverId;
+  emit("selectServer", serverId);
+}
 
 async function addServer(): Promise<void> {
   errorMessage.value = "";
@@ -119,20 +141,13 @@ function toErrorMessage(error: unknown): string {
 </script>
 
 <template>
-  <aside :class="[panelClass, collapsed && 'overflow-hidden px-2']">
-    <button v-if="collapsed" :class="['grid h-full w-full place-items-start pt-3', mutedTextClass]" title="Expand servers" @click="emit('collapse', false)">
-      <Server :size="20" />
-    </button>
-    <template v-else>
+  <div class="grid content-start gap-5">
       <div class="mb-5 flex items-center gap-3">
         <div class="grid size-9 place-items-center rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-accent)] font-black text-[var(--tapir-accent-contrast)] shadow-[var(--tapir-brand-shadow)]">T</div>
         <div>
           <h1 :class="['m-0 text-[20px] font-bold', strongTextClass]">Tapir</h1>
           <p :class="['m-0 text-[13px]', mutedTextClass]">{{ workspace?.name ?? "Local Workspace" }}</p>
         </div>
-        <button :class="['ml-auto', iconButtonClass]" title="Collapse servers" @click="emit('collapse', true)">
-          <ChevronLeft :size="17" />
-        </button>
       </div>
 
       <form class="mb-4 grid gap-2.5" @submit.prevent="addServer">
@@ -149,20 +164,49 @@ function toErrorMessage(error: unknown): string {
       <p v-if="errorMessage" class="my-2.5 rounded-md border border-[var(--tapir-danger-border)] bg-[var(--tapir-danger-bg)] p-2.5 text-[13px] text-[var(--tapir-danger)]">{{ errorMessage }}</p>
       <p v-if="schemaMessage" class="my-2.5 rounded-md border border-[var(--tapir-method-get-border)] bg-[var(--tapir-method-get-bg)] p-2.5 text-[13px] text-[var(--tapir-success)]">{{ schemaMessage }}</p>
 
-      <div class="grid gap-2.5">
-        <div
-          v-for="item in servers"
-          :key="item.server.id"
-          :class="[itemClass, 'grid-cols-[17px_minmax(0,1fr)_28px]', item.server.id === selectedServerId && activeItemClass]"
-        >
-          <Server :size="17" />
-          <button class="grid min-w-0 gap-[3px] text-left" @click="emit('selectServer', item.server.id)">
-            <strong class="truncate">{{ item.server.name }}</strong>
-            <small :class="['truncate', mutedTextClass]">{{ item.server.baseUrl }}</small>
-          </button>
-          <button :class="['grid size-7 place-items-center disabled:cursor-not-allowed disabled:opacity-60', iconButtonClass]" title="Refresh OpenAPI schema" :disabled="refreshingServerIds.has(item.server.id)" @click="refreshServer(item.server.id)">
-            <RefreshCw :size="15" :class="refreshingServerIds.has(item.server.id) && 'animate-spin'" />
-          </button>
+      <div class="grid gap-3">
+        <div v-for="item in servers" :key="item.server.id" class="grid gap-2">
+          <div :class="[itemClass, 'grid-cols-[17px_minmax(0,1fr)_24px_28px]', item.server.id === selectedServerId && activeItemClass, item.server.id === selectedServerId && 'sticky-server-header sticky top-0 z-10']">
+            <Server :size="17" />
+            <button class="grid min-w-0 gap-[3px] text-left" :title="item.server.id === selectedServerId ? 'Toggle server operations' : 'Select server'" @click="activateServer(item.server.id)">
+              <strong class="truncate">{{ item.server.name }}</strong>
+              <small :class="['truncate', mutedTextClass]">{{ item.server.baseUrl }}</small>
+            </button>
+            <button v-if="item.server.id === selectedServerId" :class="['grid size-6 place-items-center', iconButtonClass]" title="Toggle server operations" @click="activateServer(item.server.id)">
+              <ChevronRight :size="15" :class="['transition-transform', expandedServerId === item.server.id && 'rotate-90']" />
+            </button>
+            <span v-else></span>
+            <button :class="['grid size-7 place-items-center disabled:cursor-not-allowed disabled:opacity-60', iconButtonClass]" title="Refresh OpenAPI schema" :disabled="refreshingServerIds.has(item.server.id)" @click="refreshServer(item.server.id)">
+              <RefreshCw :size="15" :class="refreshingServerIds.has(item.server.id) && 'animate-spin'" />
+            </button>
+          </div>
+
+          <div v-if="item.server.id === selectedServerId && expandedServerId === item.server.id" class="ml-5 grid gap-1.5 border-l border-[var(--tapir-border)] pl-3">
+            <div :class="[eyebrowClass, 'mb-1 flex items-center justify-between px-2']">
+              <span>Operations</span>
+              <strong>{{ operationsCount }}</strong>
+            </div>
+            <button :class="[itemClass, 'py-2', selectedOperationId === CUSTOM_OPERATION_ID && activeItemClass]" @click="emit('selectCustom')">
+              <span :class="['grid h-7 w-14 place-items-center rounded bg-[var(--tapir-bg-control-hover)] text-[11px] font-black', softTextClass]">HTTP</span>
+              <span class="grid min-w-0 gap-[3px]">
+                <strong class="truncate">Custom requests</strong>
+                <small :class="['truncate', mutedTextClass]">Any method and URL</small>
+              </span>
+              <Plus :size="16" :class="['ml-auto shrink-0 hover:text-[var(--tapir-text-strong)]', mutedTextClass]" @click.stop="emit('addCustomRequest')" />
+            </button>
+
+            <div v-for="group in groupedOperations" :key="group.name" class="grid gap-1.5">
+              <h2 :class="['mb-0 mt-2 px-2 text-[11px] font-bold uppercase', subtleTextClass]">{{ group.name }}</h2>
+              <button v-for="operation in group.items" :key="operation.operationId" :class="[itemClass, 'py-2', operation.operationId === selectedOperationId && activeItemClass]" @click="emit('selectOperation', operation)">
+                <MethodBadge :method="operation.method" />
+                <span class="grid min-w-0 gap-[3px]">
+                  <strong class="truncate">{{ operation.summary || operation.operationId }}</strong>
+                  <small :class="['truncate', mutedTextClass]">{{ operation.path }}</small>
+                </span>
+                <Plus :size="16" :class="['ml-auto shrink-0 hover:text-[var(--tapir-text-strong)]', mutedTextClass]" @click.stop="emit('addOperationRequest', operation)" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -188,6 +232,6 @@ function toErrorMessage(error: unknown): string {
           Save variables
         </button>
       </section>
-    </template>
-  </aside>
+
+  </div>
 </template>
