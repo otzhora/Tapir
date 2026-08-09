@@ -149,6 +149,13 @@ async function saveVariables(): Promise<void> {
         </div>
         <p v-if="errorMessage" class="m-0 rounded-md border border-[var(--tapir-danger-border)] bg-[var(--tapir-danger-bg)] p-3 text-[13px] text-[var(--tapir-danger)]">{{ errorMessage }}</p>
         <p v-if="successMessage" class="m-0 rounded-md border border-[var(--tapir-method-get-border)] bg-[var(--tapir-method-get-bg)] p-3 text-[13px] text-[var(--tapir-success)]">{{ successMessage }}</p>
+        <div v-if="server.definition?.diagnostics?.length" class="grid gap-2 rounded-md border border-[var(--tapir-warning-border)] bg-[var(--tapir-warning-bg)] p-3 text-[13px]">
+          <strong class="text-[var(--tapir-warning)]">OpenAPI compatibility notices ({{ server.definition.diagnostics.length }})</strong>
+          <div v-for="diagnostic in server.definition.diagnostics" :key="`${diagnostic.code}:${diagnostic.path ?? diagnostic.message}`" class="grid gap-0.5">
+            <span><strong>{{ diagnostic.code }}</strong> · {{ diagnostic.message }}</span>
+            <code v-if="diagnostic.path" :class="['text-[11px]', mutedTextClass]">{{ diagnostic.path }}</code>
+          </div>
+        </div>
         <label class="grid gap-1.5 text-[13px] font-bold">Name<input v-model="serverDraft.name" :class="fieldClass" placeholder="Example API" /></label>
         <label class="grid gap-1.5 text-[13px] font-bold">Base URL<input v-model="serverDraft.baseUrl" :class="fieldClass" placeholder="https://api.example.com" /></label>
         <label class="grid gap-1.5 text-[13px] font-bold">OpenAPI document URL<input v-model="serverDraft.specUrl" :class="fieldClass" placeholder="https://api.example.com/openapi.json" /></label>

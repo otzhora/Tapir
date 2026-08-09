@@ -21,7 +21,9 @@ export function requestBodyExample(mediaType: NormalizedRequestBodyMediaType | u
 
 export function schemaExample(schema: unknown, depth = 0, seen = new Set<object>()): unknown {
   if (!isRecord(schema) || depth >= maxExampleDepth) return undefined;
+  if (schema.const !== undefined) return schema.const;
   if (schema.example !== undefined) return schema.example;
+  if (Array.isArray(schema.examples) && schema.examples.length > 0) return schema.examples[0];
   if (schema.default !== undefined) return schema.default;
   if (Array.isArray(schema.enum) && schema.enum.length > 0) return schema.enum[0];
   if (seen.has(schema)) return undefined;
@@ -35,7 +37,8 @@ export function schemaExample(schema: unknown, depth = 0, seen = new Set<object>
       const parts = schema.allOf.map((part) => schemaExample(part, depth + 1, seen)).filter(isRecord);
       return parts.length > 0 ? Object.assign({}, ...parts) : undefined;
     }
-    if (schema.type === "object" || isRecord(schema.properties)) {
+    const types = schemaTypes(schema);
+    if (types.includes("object") || isRecord(schema.properties)) {
       if (!isRecord(schema.properties)) return {};
       const result: Record<string, unknown> = {};
       for (const [key, property] of Object.entries(schema.properties)) {
@@ -45,13 +48,14 @@ export function schemaExample(schema: unknown, depth = 0, seen = new Set<object>
       }
       return result;
     }
-    if (schema.type === "array") {
+    if (types.includes("array")) {
+      if (Array.isArray(schema.prefixItems)) return schema.prefixItems.map((item) => schemaExample(item, depth + 1, seen)).filter((item) => item !== undefined);
       const item = schemaExample(schema.items, depth + 1, seen);
       return item === undefined ? [] : [item];
     }
-    if (schema.type === "boolean") return false;
-    if (schema.type === "integer" || schema.type === "number") return schema.minimum ?? 0;
-    if (schema.type === "string") return stringSchemaExample(schema);
+    if (types.includes("boolean")) return false;
+    if (types.includes("integer") || types.includes("number")) return schema.minimum ?? 0;
+    if (types.includes("string")) return stringSchemaExample(schema);
   } finally {
     seen.delete(schema);
   }
@@ -59,8 +63,10 @@ export function schemaExample(schema: unknown, depth = 0, seen = new Set<object>
 }
 
 export function requiredSchemaFields(schema: unknown): string[] {
-  if (!isRecord(schema) || !Array.isArray(schema.required)) return [];
-  return schema.required.filter((value): value is string => typeof value === "string");
+  if (!isRecord(schema)) return [];
+  const direct = Array.isArray(schema.required) ? schema.required.filter((value): value is string => typeof value === "string") : [];
+  const composed = Array.isArray(schema.allOf) ? schema.allOf.flatMap(requiredSchemaFields) : [];
+  return [...new Set([...direct, ...composed])];
 }
 
 export function isJsonLikeMediaType(value: string): boolean {
@@ -80,6 +86,12 @@ function stringSchemaExample(schema: Record<string, unknown>): string {
   if (schema.format === "uuid") return "00000000-0000-4000-8000-000000000000";
   if (schema.format === "uri" || schema.format === "url") return "https://example.com";
   return "string";
+}
+
+function schemaTypes(schema: Record<string, unknown>): string[] {
+  return Array.isArray(schema.type)
+    ? schema.type.filter((value): value is string => typeof value === "string" && value !== "null")
+    : typeof schema.type === "string" ? [schema.type] : [];
 }
 
 function stringValue(value: unknown): string {

@@ -27,6 +27,32 @@ describe("history restore helpers", () => {
     expect(parseRequestSnapshot("{")).toEqual({ method: "GET", url: "", headers: {} });
     expect(parseHeaders("{")).toEqual({});
   });
+
+  it("restores serialized object and deep-object parameters as editable JSON", () => {
+    const objectOperation: NormalizedOperation = {
+      ...operation,
+      method: "GET",
+      path: "/reports/{coordinates}",
+      parameters: [
+        { name: "coordinates", in: "path", required: true, style: "matrix", explode: true, schema: { type: "object" } },
+        { name: "filter", in: "query", required: false, style: "deepObject", explode: true, schema: { type: "object" } },
+        { name: "x-options", in: "header", required: false, style: "simple", explode: true, schema: { type: "object" } },
+        { name: "preferences", in: "cookie", required: false, style: "form", explode: false, schema: { type: "object" } }
+      ]
+    };
+    const restored = restoreRequestInputs(objectOperation, {
+      method: "GET",
+      url: "https://api.example.test/reports/;latitude=10;longitude=20?filter%5Bstatus%5D=active&filter%5Bowner%5D%5Bid%5D=7&filter%5Btags%5D%5B%5D=a&filter%5Btags%5D%5B%5D=b",
+      headers: { "x-options": "trace=true,region=eu", cookie: "preferences=theme%2Cdark%2Cdensity%2Ccompact" }
+    }, "application/json");
+
+    expect(restored.parameterValues).toEqual({
+      coordinates: JSON.stringify({ latitude: "10", longitude: "20" }),
+      filter: JSON.stringify({ status: "active", owner: { id: "7" }, tags: ["a", "b"] }),
+      "x-options": JSON.stringify({ trace: "true", region: "eu" }),
+      preferences: JSON.stringify({ theme: "dark", density: "compact" })
+    });
+  });
 });
 
 const operation: NormalizedOperation = {

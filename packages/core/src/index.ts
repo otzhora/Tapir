@@ -70,6 +70,7 @@ export interface NormalizedSecurityScheme {
 
 export interface NormalizedOperation {
   operationId: string;
+  sourceOperationId?: string;
   method: HttpMethod;
   path: string;
   summary?: string;
@@ -83,11 +84,19 @@ export interface NormalizedOperation {
   securitySchemes: NormalizedSecurityScheme[];
 }
 
+export interface OpenApiDiagnostic {
+  severity: "warning" | "error";
+  code: string;
+  message: string;
+  path?: string;
+}
+
 export interface NormalizedApiDefinition {
   name: string;
   version: string;
   servers: string[];
   operations: NormalizedOperation[];
+  diagnostics?: OpenApiDiagnostic[];
 }
 
 export interface ApiDefinition {

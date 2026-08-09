@@ -32,7 +32,7 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
     if (parameter.required && !value) {
       validationIssues.push({ field: parameter.name, message: `${parameter.name} is required.` });
     }
-    path = path.replaceAll(`{${parameter.name}}`, serializePathParameter(parameter, value));
+    path = path.replaceAll(`{${parameter.name}}`, serializePathParameter(parameter, value, validationIssues));
   }
   if (/{[^}]+}/.test(path)) {
     validationIssues.push({ field: "path", message: "The request path still has unresolved parameters." });
@@ -45,7 +45,7 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
     if (parameter.required && !value) {
       validationIssues.push({ field: parameter.name, message: `${parameter.name} is required.` });
     }
-    appendOperationQueryValue(url, parameter, value);
+    appendOperationQueryValue(url, parameter, value, validationIssues);
   }
 
   const headers: Record<string, string> = {};
@@ -54,7 +54,7 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
     if (parameter.required && !value) {
       validationIssues.push({ field: parameter.name, message: `${parameter.name} is required.` });
     }
-    if (value) headers[parameter.name] = serializeHeaderValue(parameter, value);
+    if (value) headers[parameter.name] = serializeHeaderValue(parameter, value, validationIssues);
   }
   const cookieValues = input.operation.parameters
     .filter((parameter) => parameter.in === "cookie")
@@ -63,7 +63,7 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
       if (parameter.required && !value) {
         validationIssues.push({ field: parameter.name, message: `${parameter.name} is required.` });
       }
-      return serializeCookieValues(parameter, value);
+      return serializeCookieValues(parameter, value, validationIssues);
     });
   applyAuthentications(url, headers, cookieValues, input.authentications ?? [], resolve);
   if (cookieValues.length > 0) headers.cookie = cookieValues.join("; ");
@@ -168,26 +168,52 @@ function appendQueryValues(url: URL, name: string, value: string): void {
 function appendOperationQueryValue(
   url: URL,
   parameter: NormalizedOperation["parameters"][number],
-  value: string
+  value: string,
+  validationIssues: PreparedRequestValidationIssue[]
 ): void {
   if (!value) return;
+  if (parameterIsObject(parameter)) {
+    const object = parseParameterObject(parameter, value, validationIssues);
+    if (!object) return;
+    if (parameter.style === "deepObject") {
+      for (const [name, item] of flattenDeepObject(parameter.name, object)) appendQueryPair(url, name, item, parameter.allowReserved === true);
+      return;
+    }
+    const entries = Object.entries(object).flatMap(([key, item]) => [key, scalarParameterValue(item)]);
+    if (parameter.explode !== false) {
+      for (let index = 0; index < entries.length; index += 2) appendQueryPair(url, entries[index]!, entries[index + 1]!, parameter.allowReserved === true);
+      return;
+    }
+    appendQueryPair(url, parameter.name, entries.join(","), parameter.allowReserved === true);
+    return;
+  }
   const items = parameterIsArray(parameter) ? splitArrayInput(value) : [value];
   if (parameter.style === "spaceDelimited") {
-    url.searchParams.append(parameter.name, items.join(" "));
+    appendQueryPair(url, parameter.name, items.join(" "), parameter.allowReserved === true);
     return;
   }
   if (parameter.style === "pipeDelimited") {
-    url.searchParams.append(parameter.name, items.join("|"));
+    appendQueryPair(url, parameter.name, items.join("|"), parameter.allowReserved === true);
     return;
   }
   if (parameterIsArray(parameter) && parameter.explode !== false) {
-    for (const item of items) url.searchParams.append(parameter.name, item);
+    for (const item of items) appendQueryPair(url, parameter.name, item, parameter.allowReserved === true);
     return;
   }
-  url.searchParams.append(parameter.name, items.join(","));
+  appendQueryPair(url, parameter.name, items.join(","), parameter.allowReserved === true);
 }
 
-function serializePathParameter(parameter: NormalizedOperation["parameters"][number], value: string): string {
+function serializePathParameter(parameter: NormalizedOperation["parameters"][number], value: string, validationIssues: PreparedRequestValidationIssue[]): string {
+  if (parameterIsObject(parameter)) {
+    const object = parseParameterObject(parameter, value, validationIssues);
+    if (!object) return "";
+    const entries = Object.entries(object).map(([key, item]) => [encodeURIComponent(key), encodeURIComponent(scalarParameterValue(item))] as const);
+    if (parameter.style === "label") return parameter.explode ? `.${entries.map(([key, item]) => `${key}=${item}`).join(".")}` : `.${entries.flat().join(",")}`;
+    if (parameter.style === "matrix") return parameter.explode
+      ? entries.map(([key, item]) => `;${key}=${item}`).join("")
+      : `;${encodeURIComponent(parameter.name)}=${entries.flat().join(",")}`;
+    return parameter.explode ? entries.map(([key, item]) => `${key}=${item}`).join(",") : entries.flat().join(",");
+  }
   const values = parameterIsArray(parameter) ? splitArrayInput(value) : [value];
   const encoded = values.map(encodeURIComponent);
   if (parameter.style === "label") return `.${encoded.join(parameter.explode ? "." : ",")}`;
@@ -199,12 +225,26 @@ function serializePathParameter(parameter: NormalizedOperation["parameters"][num
   return encoded.join(",");
 }
 
-function serializeHeaderValue(parameter: NormalizedOperation["parameters"][number], value: string): string {
+function serializeHeaderValue(parameter: NormalizedOperation["parameters"][number], value: string, validationIssues: PreparedRequestValidationIssue[]): string {
+  if (parameterIsObject(parameter)) {
+    const object = parseParameterObject(parameter, value, validationIssues);
+    if (!object) return "";
+    const entries = Object.entries(object).map(([key, item]) => [key, scalarParameterValue(item)] as const);
+    return parameter.explode ? entries.map(([key, item]) => `${key}=${item}`).join(",") : entries.flat().join(",");
+  }
   return parameterIsArray(parameter) ? splitArrayInput(value).join(",") : value;
 }
 
-function serializeCookieValues(parameter: NormalizedOperation["parameters"][number], value: string): string[] {
+function serializeCookieValues(parameter: NormalizedOperation["parameters"][number], value: string, validationIssues: PreparedRequestValidationIssue[]): string[] {
   if (!value) return [];
+  if (parameterIsObject(parameter)) {
+    const object = parseParameterObject(parameter, value, validationIssues);
+    if (!object) return [];
+    const entries = Object.entries(object).map(([key, item]) => [encodeURIComponent(key), encodeURIComponent(scalarParameterValue(item))] as const);
+    return parameter.explode !== false
+      ? entries.map(([key, item]) => `${key}=${item}`)
+      : [`${encodeURIComponent(parameter.name)}=${entries.flat().join(",")}`];
+  }
   const values = parameterIsArray(parameter) ? splitArrayInput(value) : [value];
   if (parameterIsArray(parameter)) {
     const encodedName = encodeURIComponent(parameter.name);
@@ -217,8 +257,60 @@ function serializeCookieValues(parameter: NormalizedOperation["parameters"][numb
 }
 
 function parameterIsArray(parameter: NormalizedOperation["parameters"][number]): boolean {
-  return !!parameter.schema && typeof parameter.schema === "object" && !Array.isArray(parameter.schema)
-    && "type" in parameter.schema && parameter.schema.type === "array";
+  return parameterSchemaTypes(parameter).includes("array");
+}
+
+function parameterIsObject(parameter: NormalizedOperation["parameters"][number]): boolean {
+  return parameterSchemaTypes(parameter).includes("object");
+}
+
+function parameterSchemaTypes(parameter: NormalizedOperation["parameters"][number]): string[] {
+  if (!parameter.schema || typeof parameter.schema !== "object" || Array.isArray(parameter.schema) || !("type" in parameter.schema)) return [];
+  const type = parameter.schema.type;
+  return Array.isArray(type) ? type.filter((item): item is string => typeof item === "string") : typeof type === "string" ? [type] : [];
+}
+
+function parseParameterObject(
+  parameter: NormalizedOperation["parameters"][number],
+  value: string,
+  validationIssues: PreparedRequestValidationIssue[]
+): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  } catch {
+    // Report the same actionable validation issue for malformed and non-object JSON.
+  }
+  validationIssues.push({ field: parameter.name, message: `${parameter.name} must be a JSON object.` });
+  return null;
+}
+
+function scalarParameterValue(value: unknown): string {
+  if (value === null) return "null";
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
+function flattenDeepObject(name: string, value: Record<string, unknown>): Array<[string, string]> {
+  const result: Array<[string, string]> = [];
+  const visit = (prefix: string, item: unknown): void => {
+    if (Array.isArray(item)) {
+      item.forEach((nested) => visit(`${prefix}[]`, nested));
+      return;
+    }
+    if (item && typeof item === "object") {
+      for (const [key, nested] of Object.entries(item)) visit(`${prefix}[${key}]`, nested);
+      return;
+    }
+    result.push([prefix, scalarParameterValue(item)]);
+  };
+  for (const [key, item] of Object.entries(value)) visit(`${name}[${key}]`, item);
+  return result;
+}
+
+function appendQueryPair(url: URL, name: string, value: string, allowReserved: boolean): void {
+  const encodedValue = encodeURIComponent(value);
+  const pair = `${encodeURIComponent(name)}=${allowReserved ? encodedValue.replaceAll(/%3A|%2F|%3F|%23|%5B|%5D|%40|%21|%24|%26|%27|%28|%29|%2A|%2B|%2C|%3B|%3D/gi, (encoded) => decodeURIComponent(encoded)) : encodedValue}`;
+  url.search = url.search ? `${url.search}&${pair}` : `?${pair}`;
 }
 
 function splitArrayInput(value: string): string[] {
@@ -308,7 +400,7 @@ function applyAuthentications(
       const name = resolve(authentication.name, "authentication");
       const value = resolve(authentication.value, "authentication");
       if (!name || !value) continue;
-      if (authentication.in === "query") url.searchParams.append(name, value);
+      if (authentication.in === "query") appendQueryPair(url, name, value, false);
       if (authentication.in === "header") headers[name] = value;
       if (authentication.in === "cookie") cookies.push(`${encodeURIComponent(name)}=${encodeURIComponent(value)}`);
     }

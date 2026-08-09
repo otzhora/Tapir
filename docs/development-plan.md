@@ -180,7 +180,7 @@ Completion evidence:
 
 ## Phase 6 — OpenAPI compatibility and diagnostics
 
-Status: `Planned`.
+Status: `Completed` on 2026-08-09.
 
 Goal: handle a broader range of real specifications and explain unsupported input precisely.
 
@@ -199,6 +199,17 @@ Acceptance criteria:
 - Compatibility fixtures cover supported OpenAPI versions and edge cases.
 - External references cannot bypass discovery limits or fetch unsafe schemes.
 - Unsupported constructs result in actionable diagnostics rather than silent omission.
+
+Completion evidence:
+
+- Scalar, array, and JSON-object parameters serialize across supported path, query, header, and cookie styles, including nested `deepObject` values and query `allowReserved`; history restoration recreates editable object JSON.
+- Discovery resolves local and same-origin external references with HTTP(S)-only enforcement, redirect-origin checks, 15-second timeouts, 2 MB per-reference and 10 MB aggregate size limits, 16-document and 16-reference-depth limits, cache reuse, and circular-reference termination.
+- OpenAPI 3.0 and 3.1 compatibility fixtures pass; JSON Schema `const`, `examples`, type arrays, tuple `prefixItems`, `$ref` siblings, and composed required fields feed request authoring.
+- Duplicate source operation IDs receive deterministic method-and-path identities independent of document order.
+- Swagger 2.0 and unknown versions fail with conversion/support guidance.
+- Normalized diagnostics identify unresolved references, unsupported security, parameter, callback, webhook, TRACE, multipart file, and media-encoding constructs, and the renderer shows them in server configuration.
+- Architecture documentation now matches reference resolution and compatibility behavior.
+- Typechecking, 65 tests, fixture smoke tests, `git diff --check`, and the production build pass.
 
 ## Phase 7 — Packaged application verification
 
@@ -257,3 +268,5 @@ Acceptance criteria:
 - Completed Phase 4 schema-assisted request authoring; commit recorded after verification.
 - Committed Phase 4 as `717b7b7` (`Generate schema-assisted request examples`).
 - Completed Phase 5 workspace-scale history; commit recorded after verification.
+- Committed Phase 5 as `66b5551` (`Scale workspace request history`).
+- Completed Phase 6 OpenAPI compatibility and diagnostics; commit recorded after verification.

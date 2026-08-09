@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { BasicOpenApiNormalizer } from "./index.js";
 
 describe("BasicOpenApiNormalizer", () => {
+  it("normalizes the OpenAPI 3.0 and 3.1 compatibility fixtures and rejects the Swagger fixture", () => {
+    const normalizer = new BasicOpenApiNormalizer();
+    const fixture = (name: string) => JSON.parse(readFileSync(new URL(`../test-fixtures/${name}`, import.meta.url), "utf8")) as unknown;
+
+    expect(normalizer.normalize(fixture("openapi-3.0.json"))).toMatchObject({ name: "OpenAPI 3.0 fixture", operations: [{ operationId: "getPet" }] });
+    expect(normalizer.normalize(fixture("openapi-3.1.json"))).toMatchObject({ name: "OpenAPI 3.1 fixture", operations: [{ operationId: "createPet" }] });
+    expect(() => normalizer.normalize(fixture("swagger-2.0.json"))).toThrow("Swagger 2.0 is not supported");
+  });
+
   it("extracts callable operations with path-level and operation-level parameters", () => {
     const normalizer = new BasicOpenApiNormalizer();
 
@@ -185,5 +195,81 @@ describe("BasicOpenApiNormalizer", () => {
     });
 
     expect(normalized.operations[0]).toMatchObject({ securityRequirements: [], securitySchemes: [] });
+  });
+
+  it("assigns stable identities to duplicate operation IDs", () => {
+    const document = {
+      openapi: "3.0.3",
+      info: { title: "Duplicates", version: "1" },
+      paths: {
+        "/pets": { get: { operationId: "find", responses: { "200": { description: "OK" } } } },
+        "/owners": { get: { operationId: "find", responses: { "200": { description: "OK" } } } }
+      }
+    };
+
+    const first = new BasicOpenApiNormalizer().normalize(document);
+    const reordered = new BasicOpenApiNormalizer().normalize({ ...document, paths: { "/owners": document.paths["/owners"], "/pets": document.paths["/pets"] } });
+    expect(first.operations.map((operation) => operation.operationId).sort()).toEqual([
+      "find#GET:/owners",
+      "find#GET:/pets"
+    ]);
+    expect(reordered.operations.map((operation) => operation.operationId).sort()).toEqual(first.operations.map((operation) => operation.operationId).sort());
+    expect(first.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "duplicate-operation-id", path: "#/paths/~1pets/get/operationId" })
+    ]));
+  });
+
+  it("handles OpenAPI 3.1 schema features and reports partially unsupported constructs", () => {
+    const normalized = new BasicOpenApiNormalizer().normalize({
+      openapi: "3.1.1",
+      jsonSchemaDialect: "https://example.test/custom-dialect",
+      info: { title: "Modern API", version: "1" },
+      webhooks: { changed: {} },
+      components: {
+        schemas: { Identifier: { type: ["string", "null"], const: "fixed", description: "base", properties: { broken: { $ref: "#/components/schemas/Missing" } } } },
+        securitySchemes: { OAuth: { type: "oauth2", flows: {} } }
+      },
+      paths: {
+        "/reports": {
+          get: {
+            parameters: [
+              { name: "filter", in: "query", style: "matrix", schema: { type: "object" } },
+              { name: "id", in: "query", schema: { $ref: "#/components/schemas/Identifier", description: "sibling" } }
+            ],
+            security: [{ OAuth: [], Unknown: [] }],
+            callbacks: { completed: {} },
+            responses: { "200": { description: "OK" } }
+          },
+          post: {
+            requestBody: { content: { "multipart/form-data": { schema: { type: "object", properties: { file: { type: "string", format: "binary" } } }, encoding: { file: { contentType: "image/png" } } } } },
+            responses: { "200": { description: "OK" } }
+          },
+          trace: { responses: { "200": { description: "OK" } } }
+        }
+      }
+    });
+
+    expect(normalized.operations[0]?.parameters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "filter", style: "form" }),
+      expect.objectContaining({ name: "id", schema: expect.objectContaining({ type: ["string", "null"], const: "fixed", description: "sibling" }) })
+    ]));
+    expect(normalized.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual(expect.arrayContaining([
+      "schema-dialect",
+      "unsupported-webhooks",
+      "unsupported-security-scheme",
+      "missing-security-scheme",
+      "unsupported-parameter-style",
+      "unsupported-binary-upload",
+      "unsupported-media-encoding",
+      "unsupported-callbacks",
+      "unsupported-http-method",
+      "unresolved-reference"
+    ]));
+  });
+
+  it("rejects Swagger 2.0 and unknown OpenAPI versions with actionable messages", () => {
+    const normalizer = new BasicOpenApiNormalizer();
+    expect(() => normalizer.normalize({ swagger: "2.0", paths: {} })).toThrow("Convert the document to OpenAPI 3.0 or 3.1");
+    expect(() => normalizer.normalize({ openapi: "4.0.0", paths: {} })).toThrow("Tapir supports OpenAPI 3.0 and 3.1");
   });
 });

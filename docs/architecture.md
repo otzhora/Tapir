@@ -10,7 +10,7 @@ Tapir starts as a local-first, spec-bound API workspace. The first runnable loop
 2. Discover a live OpenAPI JSON document from common paths.
 3. Normalize the document into a Tapir operation list.
 4. Select an operation.
-5. Add path/query/header values and optional API key header auth.
+5. Author path/query/header/cookie values, request bodies, variables, and supported authentication.
 6. Send the request from the Electron main process.
 7. Store local call history in SQLite.
 
@@ -27,23 +27,29 @@ The renderer talks to the main process through a narrow preload bridge. It does 
 
 ## Storage and Secrets
 
-SQLite stores local workspace data. API key header auth is represented as a `UserAuthProfile` plus a separate `SecretValue`, so secrets are not embedded into server records or examples.
+SQLite stores local workspace data. API-key, bearer, and Basic authentication are represented as a `UserAuthProfile` plus a separate `SecretValue`, so secrets are not embedded into server records, request previews, history, or examples.
 
 For the desktop app, `SecretValue.encryptedOrPlainValue` is protected with Electron `safeStorage` when OS-backed encryption is available. If the host cannot provide encryption, the value falls back to plaintext while preserving the same repository interface.
 
 ## OpenAPI Normalization
 
-The first normalizer extracts enough OpenAPI data to list and call operations:
+The normalizer accepts OpenAPI 3.0 and 3.1 documents and extracts the data needed to list, author, and call operations:
 
 - method
 - path
-- operation id
+- a stable internal operation identity plus the source operation ID
 - summary/description
 - tags
 - path/query/header/cookie parameters
-- request body and response metadata as raw schema fragments
+- request-body media types, examples, and response metadata as schema fragments
+- security requirements and schemes
+- compatibility diagnostics for unsupported or inconsistent constructs
 
-The normalizer does not yet resolve `$ref`, infer auth UI from security schemes, or generate request bodies from schemas.
+Local JSON Pointer references are resolved during normalization. Discovery also resolves same-origin HTTP(S) external references before normalization, with per-document and combined size limits, a 15-second fetch timeout, a 16-document limit, a 16-reference depth limit, redirect-origin checks, and circular-reference termination. Cross-origin and non-HTTP(S) references are rejected rather than fetched.
+
+Duplicate source `operationId` values receive deterministic identities derived from the HTTP method and path so draft matching is stable even if document order changes. Swagger 2.0 is rejected with a conversion diagnostic rather than being partially interpreted as OpenAPI 3.
+
+Tapir serializes scalar, array, and object parameters for supported OpenAPI styles, including `deepObject` and query `allowReserved`. Compatibility notices are retained with the normalized definition and shown in server configuration for unsupported security schemes, invalid parameter style/shape combinations, callbacks, webhooks, TRACE operations, unresolved references, and multipart file or encoding behavior.
 
 ## Hosted-Later Shape
 

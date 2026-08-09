@@ -197,6 +197,8 @@ describe("desktop renderer app", () => {
 
     expect(wrapper.text()).toContain("Server configuration");
     expect(wrapper.text()).toContain("Variables");
+    expect(wrapper.text()).toContain("OpenAPI compatibility notices (1)");
+    expect(wrapper.text()).toContain("unsupported-webhooks");
     expect(wrapper.find("button[title='Configure server']").exists()).toBe(true);
     expect(wrapper.find("[title='Drag to resize response']").exists()).toBe(false);
 
@@ -497,7 +499,8 @@ const serverWithDefinition: ServerWithDefinition = {
     name: "Example API",
     version: "1.0.0",
     servers: ["https://api.example.test"],
-    operations: [listPetsOperation, createPetOperation]
+    operations: [listPetsOperation, createPetOperation],
+    diagnostics: [{ severity: "warning", code: "unsupported-webhooks", message: "OpenAPI webhooks are not shown.", path: "#/webhooks" }]
   },
   variables: [],
   authentication: []

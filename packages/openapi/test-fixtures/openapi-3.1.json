@@ -1,0 +1,23 @@
+{
+  "openapi": "3.1.1",
+  "info": { "title": "OpenAPI 3.1 fixture", "version": "1.0.0" },
+  "paths": {
+    "/pets": {
+      "post": {
+        "operationId": "createPet",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": ["object", "null"],
+                "properties": { "kind": { "const": "pet" } }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Created" } }
+      }
+    }
+  }
+}

@@ -34,4 +34,10 @@ describe("schema examples", () => {
       { type: "object", properties: { email: { type: "string", format: "email" } } }
     ] })).toEqual({ id: 1, email: "user@example.com" });
   });
+
+  it("supports OpenAPI 3.1 and JSON Schema 2020-12 authoring keywords", () => {
+    expect(schemaExample({ type: ["string", "null"], const: "fixed" })).toBe("fixed");
+    expect(schemaExample({ type: "array", prefixItems: [{ type: "integer" }, { type: ["string", "null"], examples: ["sample"] }] })).toEqual([0, "sample"]);
+    expect(requiredSchemaFields({ allOf: [{ required: ["id"] }, { required: ["name", "id"] }] })).toEqual(["id", "name"]);
+  });
 });

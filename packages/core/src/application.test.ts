@@ -66,6 +66,46 @@ describe("prepareOperationRequest", () => {
     });
   });
 
+  it("serializes object parameters, deep objects, and reserved query values", () => {
+    const prepared = prepareOperationRequest("https://api.example.test", {
+      operation: {
+        ...operation,
+        method: "GET",
+        path: "/reports/{coordinates}",
+        parameters: [
+          { name: "coordinates", in: "path", required: true, style: "matrix", explode: true, schema: { type: "object" } },
+          { name: "filter", in: "query", required: false, style: "deepObject", explode: true, schema: { type: "object" } },
+          { name: "target", in: "query", required: false, style: "form", allowReserved: true, schema: { type: "string" } },
+          { name: "x-options", in: "header", required: false, style: "simple", explode: true, schema: { type: "object" } },
+          { name: "preferences", in: "cookie", required: false, style: "form", explode: false, schema: { type: "object" } }
+        ]
+      },
+      values: {
+        coordinates: JSON.stringify({ latitude: 10, longitude: 20 }),
+        filter: JSON.stringify({ status: "active", owner: { id: 7 }, tags: ["a", "b"] }),
+        target: "https://other.example.test/a?view=full",
+        "x-options": JSON.stringify({ trace: true, region: "eu" }),
+        preferences: JSON.stringify({ theme: "dark", density: "compact" })
+      }
+    });
+
+    expect(prepared.validationIssues).toEqual([]);
+    expect(prepared.request.url).toBe("https://api.example.test/reports/;latitude=10;longitude=20?filter%5Bstatus%5D=active&filter%5Bowner%5D%5Bid%5D=7&filter%5Btags%5D%5B%5D=a&filter%5Btags%5D%5B%5D=b&target=https://other.example.test/a?view=full");
+    expect(prepared.request.headers).toMatchObject({
+      "x-options": "trace=true,region=eu",
+      cookie: "preferences=theme,dark,density,compact"
+    });
+  });
+
+  it("reports malformed object parameter input", () => {
+    const prepared = prepareOperationRequest("https://api.example.test", {
+      operation: { ...operation, method: "GET", path: "/pets", parameters: [{ name: "filter", in: "query", required: false, style: "deepObject", schema: { type: ["object", "null"] } }] },
+      values: { filter: "not-json" }
+    });
+
+    expect(prepared.validationIssues).toContainEqual({ field: "filter", message: "filter must be a JSON object." });
+  });
+
   it("injects and redacts query, cookie, bearer, and Basic credentials", () => {
     const common = { ...operation, method: "GET" as const, path: "/secured", parameters: [] };
     const apiKeys = prepareOperationRequest("https://api.example.test", {
