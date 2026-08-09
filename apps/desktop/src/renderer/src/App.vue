@@ -336,6 +336,7 @@ async function serverDeleted(serverId: string): Promise<void> {
           @add-parameter="request.addParameter"
           @call-operation="request.callOperation"
           @close-draft="request.closeDraft"
+          @close-drafts="request.closeDrafts"
           @copy-curl="request.copyCurl"
           @create-draft="request.isCustomSpace.value ? request.createCustomRequest() : workspaceServers.selectedOperation.value && request.createOpenApiRequest(workspaceServers.selectedOperation.value)"
           @remove-header="request.removeHeader"

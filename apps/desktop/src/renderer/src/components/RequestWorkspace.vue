@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { AlertCircle, Clipboard, Database, Eye, FileJson2, Plus, Send, TerminalSquare, X } from "lucide-vue-next";
 import type { NormalizedOperation, PreparedOperationRequest, RequestDraft, RequestDraftHeader, RequestDraftParameter, SaveAuthenticationRequest, ServerAuthenticationConfiguration, ServerWithDefinition } from "@tapir/core";
 import type { RequestTab, RequestTabItem } from "../types";
@@ -40,6 +40,7 @@ const emit = defineEmits<{
   addParameter: [location: RequestDraftParameter["in"]];
   callOperation: [];
   closeDraft: [draftId: string];
+  closeDrafts: [draftIds: string[]];
   copyCurl: [shell: CurlShell, includeSecrets: boolean];
   createDraft: [];
   removeHeader: [id: string];
@@ -62,6 +63,8 @@ const emit = defineEmits<{
 }>();
 
 const methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
+const draftMenu = ref<{ draftId: string; x: number; y: number } | null>(null);
+const draftMenuFirstAction = ref<HTMLButtonElement | null>(null);
 const curlShell = ref<CurlShell>("posix");
 const credentialValue = ref("");
 const basicUsername = ref("");
@@ -116,6 +119,24 @@ function checkedValue(event: Event): boolean {
   return (event.target as HTMLInputElement).checked;
 }
 
+function openDraftMenu(event: MouseEvent, draftId: string): void {
+  draftMenu.value = {
+    draftId,
+    x: Math.max(8, Math.min(event.clientX, window.innerWidth - 188)),
+    y: Math.max(8, Math.min(event.clientY, window.innerHeight - 126))
+  };
+  void nextTick(() => draftMenuFirstAction.value?.focus());
+}
+
+function closeDraftMenu(): void {
+  draftMenu.value = null;
+}
+
+function closeDraftTabs(draftIds: string[]): void {
+  closeDraftMenu();
+  emit("closeDrafts", draftIds);
+}
+
 const generalValidationIssues = computed(() => {
   const preciseFields = new Set(["body", "path", "url", ...props.parameters.map((parameter) => parameter.name)]);
   return props.validationIssues.filter((issue) => !preciseFields.has(issue.field));
@@ -150,6 +171,7 @@ function usesStructuredBodyEditor(value: string): boolean {
           class="request-tab"
           :class="draft.id === activeDraft?.id && 'is-active'"
           @click="emit('selectDraft', draft.id)"
+          @contextmenu.prevent="openDraftMenu($event, draft.id)"
         >
           <span class="truncate">{{ draft.name }}</span>
           <span v-if="draft.deprecatedAt" class="rounded bg-[var(--tapir-warning-bg)] px-1.5 py-0.5 text-[10px] font-black uppercase text-[var(--tapir-warning)]">Deprecated</span>
@@ -159,6 +181,22 @@ function usesStructuredBodyEditor(value: string): boolean {
           <Plus :size="17" />
         </button>
       </nav>
+
+      <Teleport to="body">
+        <div v-if="draftMenu" class="fixed inset-0 z-40" role="presentation" @pointerdown.self="closeDraftMenu" @contextmenu.prevent="closeDraftMenu">
+          <div
+            class="request-tab-menu"
+            role="menu"
+            aria-label="Request tab actions"
+            :style="{ left: `${draftMenu.x}px`, top: `${draftMenu.y}px` }"
+            @keydown.esc.stop="closeDraftMenu"
+          >
+            <button ref="draftMenuFirstAction" role="menuitem" type="button" @click="closeDraftTabs([draftMenu.draftId])">Close tab</button>
+            <button role="menuitem" type="button" :disabled="draftTabs.length < 2" @click="closeDraftTabs(draftTabs.filter((draft) => draft.id !== draftMenu?.draftId).map((draft) => draft.id))">Close other tabs</button>
+            <button role="menuitem" type="button" @click="closeDraftTabs(draftTabs.map((draft) => draft.id))">Close all tabs</button>
+          </div>
+        </div>
+      </Teleport>
 
       <section v-if="activeDraft" class="grid min-h-full grid-rows-[auto_auto_auto_1fr] bg-transparent">
         <header class="grid gap-3 border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-panel-strong)] px-4 py-3 shadow-[var(--tapir-inset-header-shadow)] backdrop-blur-xl">

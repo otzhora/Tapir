@@ -107,6 +107,51 @@ describe("desktop renderer app", () => {
     }));
   });
 
+  it("closes request tabs from their right-click menu", async () => {
+    const wrapper = mountApp();
+    await settle();
+
+    const newTab = () => wrapper.find("button[title='New request tab']");
+    await newTab().trigger("click");
+    await settle();
+    await newTab().trigger("click");
+    await settle();
+    expect(wrapper.findAll(".request-tab")).toHaveLength(3);
+
+    await wrapper.findAll(".request-tab")[1]!.trigger("contextmenu", { clientX: 40, clientY: 60 });
+    await nextTick();
+    let menu = document.body.querySelector<HTMLElement>("[aria-label='Request tab actions']")!;
+    expect(menu.textContent).toContain("Close tab");
+    expect(menu.textContent).toContain("Close other tabs");
+    expect(menu.textContent).toContain("Close all tabs");
+    (Array.from(menu.querySelectorAll("button")).find((button) => button.textContent === "Close other tabs") as HTMLButtonElement).click();
+    await settle();
+
+    expect(wrapper.findAll(".request-tab")).toHaveLength(1);
+    expect(bridge.deleteRequestDraft).toHaveBeenCalledTimes(2);
+
+    await newTab().trigger("click");
+    await settle();
+    await newTab().trigger("click");
+    await settle();
+    await wrapper.findAll(".request-tab")[1]!.trigger("contextmenu", { clientX: 40, clientY: 60 });
+    await nextTick();
+    menu = document.body.querySelector<HTMLElement>("[aria-label='Request tab actions']")!;
+    (Array.from(menu.querySelectorAll("button")).find((button) => button.textContent === "Close tab") as HTMLButtonElement).click();
+    await settle();
+
+    expect(wrapper.findAll(".request-tab")).toHaveLength(2);
+
+    await wrapper.find(".request-tab").trigger("contextmenu", { clientX: 40, clientY: 60 });
+    await nextTick();
+    menu = document.body.querySelector<HTMLElement>("[aria-label='Request tab actions']")!;
+    (Array.from(menu.querySelectorAll("button")).find((button) => button.textContent === "Close all tabs") as HTMLButtonElement).click();
+    await settle();
+
+    expect(wrapper.findAll(".request-tab")).toHaveLength(0);
+    expect(bridge.deleteRequestDraft).toHaveBeenCalledTimes(5);
+  });
+
   it("imports an unmatched browser cURL request into the Request Sandbox", async () => {
     const wrapper = mountApp();
     await settle();
@@ -424,6 +469,9 @@ function createMockBridge(): MockTapirBridge {
     listRequestDrafts: vi.fn(async () => state.drafts),
     createRequestDraft: vi.fn(async (input: CreateRequestDraftRequest) => {
       const draft = input.sourceType === "custom" ? customDraft(input) : openApiDraft(input);
+      if (state.drafts.some((candidate) => candidate.id === draft.id)) {
+        draft.id = `${draft.id}-${state.drafts.length + 1}`;
+      }
       state.drafts = [...state.drafts, draft];
       return draft;
     }),

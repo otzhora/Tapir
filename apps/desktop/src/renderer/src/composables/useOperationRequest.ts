@@ -201,6 +201,10 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     await persistence.deleteDraft(draftId);
   }
 
+  async function closeDrafts(draftIds: string[]): Promise<void> {
+    await Promise.all(draftIds.map((draftId) => persistence.deleteDraft(draftId)));
+  }
+
   function selectDraft(draftId: string): void {
     activeDraftBySpace[activeSpaceKey.value] = draftId;
     activeRequestTab.value = "params";
@@ -347,6 +351,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     canSend,
     clearRequestInputs,
     closeDraft,
+    closeDrafts,
     copyCurl,
     createCustomRequest,
     createImportedCustomRequest,

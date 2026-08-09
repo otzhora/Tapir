@@ -307,6 +307,42 @@ body.is-resizing {
   color: var(--tapir-text-strong);
 }
 
+.request-tab-menu {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  width: 180px;
+  overflow: hidden;
+  border: 1px solid var(--tapir-border-strong);
+  border-radius: 8px;
+  background: var(--tapir-bg-panel-opaque);
+  padding: 4px;
+  box-shadow: 0 14px 36px rgb(0 0 0 / 32%);
+}
+
+.request-tab-menu button {
+  min-height: 34px;
+  border-radius: 5px;
+  padding: 0 9px;
+  color: var(--tapir-text);
+  font-size: 13px;
+  font-weight: 750;
+  text-align: left;
+}
+
+.request-tab-menu button:hover,
+.request-tab-menu button:focus-visible {
+  background: var(--tapir-bg-control-hover);
+  color: var(--tapir-text-strong);
+  outline: none;
+}
+
+.request-tab-menu button:disabled {
+  color: var(--tapir-text-subtle);
+  cursor: default;
+  opacity: 0.55;
+}
+
 .mini-button,
 .icon-button {
   display: inline-flex;
