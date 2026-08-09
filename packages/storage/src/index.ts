@@ -18,7 +18,8 @@ import type {
   ServerVariableRepository,
   ServerRepository,
   UserAuthProfile,
-  Workspace
+  Workspace,
+  TransactionRunner
 } from "@tapir/core";
 
 export type SqliteDatabase = Database.Database;
@@ -32,6 +33,7 @@ export interface LocalTapirStorage {
   authProfiles: AuthProfileRepository;
   history: HistoryRepository;
   requestDrafts: RequestDraftRepository;
+  transaction: TransactionRunner;
 }
 
 export interface LocalTapirStorageOptions {
@@ -59,7 +61,8 @@ export async function createLocalTapirStorage(filePath: string, options: LocalTa
     definitions: new SqliteApiDefinitionRepository(db),
     authProfiles: new SqliteAuthProfileRepository(db),
     history: new SqliteHistoryRepository(db),
-    requestDrafts: new SqliteRequestDraftRepository(db)
+    requestDrafts: new SqliteRequestDraftRepository(db),
+    transaction: new SqliteTransactionRunner(db)
   };
 }
 
@@ -200,15 +203,39 @@ export class SqliteApiDefinitionRepository implements ApiDefinitionRepository {
     return input;
   }
 
-  async latestForServer(serverId: string): Promise<ApiDefinition | null> {
+  async latestNormalizedForServer(serverId: string): Promise<{ normalizedJson: string } | null> {
     const row = this.db.prepare(`
-      select d.* from api_definitions d
+      select d.normalized_json from api_definitions d
       join api_definition_sources s on s.id = d.source_id
       where s.server_instance_id = ?
       order by d.fetched_at desc
       limit 1
-    `).get(serverId) as DbDefinition | undefined;
-    return row ? mapDefinition(row) : null;
+    `).get(serverId) as Pick<DbDefinition, "normalized_json"> | undefined;
+    return row ? { normalizedJson: row.normalized_json } : null;
+  }
+}
+
+export class SqliteTransactionRunner implements TransactionRunner {
+  private pending: Promise<void> = Promise.resolve();
+
+  constructor(private db: SqliteDatabase) {}
+
+  async run<Result>(work: () => Promise<Result>): Promise<Result> {
+    let release = (): void => undefined;
+    const previous = this.pending;
+    this.pending = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try {
+      this.db.exec("begin immediate");
+      const result = await work();
+      this.db.exec("commit");
+      return result;
+    } catch (error) {
+      if (this.db.inTransaction) this.db.exec("rollback");
+      throw error;
+    } finally {
+      release();
+    }
   }
 }
 

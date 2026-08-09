@@ -20,7 +20,8 @@ describe("FetchHttpExecutor", () => {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": "secret" },
       body: "{\"name\":\"Momo\"}",
-      signal: expect.any(AbortSignal)
+      signal: expect.any(AbortSignal),
+      redirect: "manual"
     }));
     expect(response).toMatchObject({
       status: 201,

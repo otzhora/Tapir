@@ -235,7 +235,11 @@ export interface ServerVariableRepository {
 export interface ApiDefinitionRepository {
   createSource(input: Omit<ApiDefinitionSource, "createdAt" | "updatedAt">): Promise<ApiDefinitionSource>;
   createDefinition(input: ApiDefinition): Promise<ApiDefinition>;
-  latestForServer(serverId: string): Promise<ApiDefinition | null>;
+  latestNormalizedForServer(serverId: string): Promise<{ normalizedJson: string } | null>;
+}
+
+export interface TransactionRunner {
+  run<Result>(work: () => Promise<Result>): Promise<Result>;
 }
 
 export interface AuthProfileRepository {
@@ -309,6 +313,7 @@ export interface OpenApiNormalizer {
 }
 
 export * from "./ipc.js";
+export * from "./ipcValidation.js";
 export * from "./application.js";
 export * from "./requestPreparation.js";
 export * from "./urlNormalization.js";

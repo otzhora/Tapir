@@ -27,10 +27,11 @@ describe("TapirApplicationService", () => {
     const servers = new MemoryServerRepository();
     await servers.create({ id: "server-1", workspaceId: workspace.id, name: "Example API", baseUrl: "https://api.example.test", specUrl: "https://api.example.test/openapi.json", apiDefinitionSourceId: null });
     const authProfiles = new MemoryAuthProfileRepository();
+    const definitions = new MemoryDefinitionRepository();
     const historyEntries: Parameters<HistoryRepository["create"]>[0][] = [];
     const executed: PreparedRequest[] = [];
     const dependencies = {
-      workspace, servers, serverVariables: unusedServerVariables(), definitions: new MemoryDefinitionRepository(), authProfiles,
+      workspace, servers, serverVariables: unusedServerVariables(), definitions, authProfiles,
       history: {
         async create(input: Parameters<HistoryRepository["create"]>[0]) { historyEntries.push(input); return { ...input, id: "history-1", createdAt: "2026-07-01T00:00:00.000Z" }; },
         async list() { return { entries: [], nextCursor: null }; },
@@ -40,19 +41,23 @@ describe("TapirApplicationService", () => {
       requestDrafts: unusedRequestDrafts(), discovery: fixedDiscovery(), normalizer: fixedNormalizer(),
       http: { async execute(request: PreparedRequest) { executed.push(request); return { status: 200, headers: {}, body: "ok", durationMs: 1 }; } }
     };
-    const service = new TapirApplicationService(dependencies);
+    let service = new TapirApplicationService(dependencies);
     const operation = {
       operationId: "secured", method: "GET" as const, path: "/secured", tags: [], parameters: [], requestBodyMediaTypes: [],
       securityRequirements: [{ ApiKeyAuth: [] }], securitySchemes: [{ key: "ApiKeyAuth", type: "apiKey", name: "x-api-key", in: "header" as const }]
     };
+    await definitions.setOperations("server-1", [operation]);
+
+    await expect(service.previewOperation({ serverId: "server-1", operationId: "forged", values: {} }))
+      .rejects.toThrow("OpenAPI operation not found.");
 
     await expect(service.saveAuthentication({ serverId: "server-1", schemeKey: "ApiKeyAuth", type: "apiKey", parameterName: "x-api-key", location: "header", secretValue: "top-secret" })).resolves.toEqual({ schemeKey: "ApiKeyAuth", type: "apiKey", parameterName: "x-api-key", location: "header", configured: true });
-    const preview = await service.previewOperation({ serverId: "server-1", operation, values: {} });
+    const preview = await service.previewOperation({ serverId: "server-1", operationId: operation.operationId, values: {} });
     expect(preview.request.headers["x-api-key"]).toBe("********");
     expect(preview.redactedRequest.headers["x-api-key"]).toBe("********");
     expect(JSON.stringify(preview)).not.toContain("top-secret");
 
-    const result = await service.callOperation({ serverId: "server-1", operation, values: {} });
+    const result = await service.callOperation({ serverId: "server-1", operationId: operation.operationId, values: {} });
     expect(executed[0]?.headers["x-api-key"]).toBe("top-secret");
     expect(result.request.headers["x-api-key"]).toBe("********");
     expect(historyEntries[0]?.requestSnapshotJson).toContain("********");
@@ -67,13 +72,15 @@ describe("TapirApplicationService", () => {
       operationId: "optionalBearer", method: "GET" as const, path: "/optional", tags: [], parameters: [], requestBodyMediaTypes: [],
       securityRequirements: [{}, { BearerAuth: [] }], securitySchemes: [{ key: "BearerAuth", type: "http", scheme: "bearer" }]
     };
-    await expect(service.previewOperation({ serverId: "server-1", operation: bearerOperation, values: {} })).resolves.toMatchObject({
+    await definitions.setOperations("server-1", [operation, bearerOperation]);
+    service = new TapirApplicationService(dependencies);
+    await expect(service.previewOperation({ serverId: "server-1", operationId: bearerOperation.operationId, values: {} })).resolves.toMatchObject({
       request: { headers: {} }
     });
     await service.saveAuthentication({ serverId: "server-1", schemeKey: "BearerAuth", type: "bearer", secretValue: "bearer-secret" });
-    const bearerPreview = await service.previewOperation({ serverId: "server-1", operation: bearerOperation, values: {} });
+    const bearerPreview = await service.previewOperation({ serverId: "server-1", operationId: bearerOperation.operationId, values: {} });
     expect(bearerPreview.request.headers.authorization).toBe("Bearer ********");
-    await service.callOperation({ serverId: "server-1", operation: bearerOperation, values: {} });
+    await service.callOperation({ serverId: "server-1", operationId: bearerOperation.operationId, values: {} });
     expect(executed.at(-1)?.headers.authorization).toBe("Bearer bearer-secret");
 
     const basicOperation: NormalizedOperation = {
@@ -84,8 +91,10 @@ describe("TapirApplicationService", () => {
         { key: "BasicAuth", type: "http", scheme: "basic" }
       ]
     };
+    await definitions.setOperations("server-1", [operation, bearerOperation, basicOperation]);
+    service = new TapirApplicationService(dependencies);
     await service.saveAuthentication({ serverId: "server-1", schemeKey: "BasicAuth", type: "basic", username: "momo", secretValue: "basic-secret" });
-    await service.callOperation({ serverId: "server-1", operation: basicOperation, values: {} });
+    await service.callOperation({ serverId: "server-1", operationId: basicOperation.operationId, values: {} });
     expect(executed.at(-1)?.headers).toMatchObject({
       "x-api-key": "top-secret",
       authorization: `Basic ${Buffer.from("momo:basic-secret").toString("base64")}`
@@ -260,11 +269,19 @@ describe("TapirApplicationService", () => {
     const service = new TapirApplicationService({
       workspace, history, servers: new MemoryServerRepository(), definitions: new MemoryDefinitionRepository(), requestDrafts: unusedRequestDrafts(),
       serverVariables: unusedServerVariables(), authProfiles: unusedAuthProfiles(), discovery: fixedDiscovery(), normalizer: fixedNormalizer(),
-      http: { async execute() { return { status: 204, headers: {}, body: "", durationMs: 2 }; } }
+      http: { async execute() { return { status: 204, headers: { "set-cookie": "session=response-secret" }, body: "", durationMs: 2 }; } }
     });
 
-    await service.callCustomRequest({ serverId: null, method: "GET", url: "https://standalone.example.test/health", parameters: [], headers: [] });
-    expect(entries[0]).toMatchObject({ serverInstanceId: null, requestMethod: "GET", requestUrl: "https://standalone.example.test/health", responseStatus: 204 });
+    await service.callCustomRequest({
+      serverId: null,
+      method: "GET",
+      url: "https://standalone.example.test/health?opaque=secret",
+      parameters: [],
+      headers: [{ id: "auth", name: "authorization", value: "Bearer request-secret", enabled: true }]
+    });
+    expect(entries[0]).toMatchObject({ serverInstanceId: null, requestMethod: "GET", requestUrl: "https://standalone.example.test/health?opaque=********", responseStatus: 204 });
+    expect(entries[0]?.requestSnapshotJson).not.toContain("request-secret");
+    expect(entries[0]?.responseHeadersJson).not.toContain("response-secret");
     await expect(service.listHistory({ workspaceId: workspace.id, serverId: null })).resolves.toMatchObject({ entries: [{ id: "history-1" }] });
     await service.deleteHistoryEntry(workspace.id, "history-1");
     expect(entries).toEqual([]);
@@ -361,12 +378,6 @@ describe("TapirApplicationService", () => {
     await expect(service.updateRequestDraft({
       draft: {
         id: "other-draft",
-        workspaceId: workspace.id,
-        serverInstanceId: null,
-        sourceType: "custom",
-        operationId: null,
-        deprecatedAt: null,
-        deprecationReason: null,
         name: "Tampered",
         isNameManual: true,
         method: "GET",
@@ -376,9 +387,7 @@ describe("TapirApplicationService", () => {
         headersJson: "[]",
         body: "",
         contentType: "application/json",
-        sortOrder: 1,
-        createdAt: "2026-07-01T00:00:00.000Z",
-        updatedAt: "2026-07-01T00:00:00.000Z"
+        sortOrder: 1
       }
     })).rejects.toThrow("Request draft not found.");
   });
@@ -460,9 +469,31 @@ class MemoryDefinitionRepository implements ApiDefinitionRepository {
     return input;
   }
 
-  async latestForServer(serverId: string): Promise<ApiDefinition | null> {
+  async latestNormalizedForServer(serverId: string): Promise<{ normalizedJson: string } | null> {
     const sourceIds = new Set(this.sources.filter((source) => source.serverInstanceId === serverId).map((source) => source.id));
-    return this.definitions.filter((definition) => sourceIds.has(definition.sourceId)).at(-1) ?? null;
+    const definition = this.definitions.filter((candidate) => sourceIds.has(candidate.sourceId)).at(-1);
+    return definition ? { normalizedJson: definition.normalizedJson } : null;
+  }
+
+  async setOperations(serverId: string, operations: NormalizedOperation[]): Promise<void> {
+    const sourceId = `source-${serverId}-${this.sources.length}`;
+    await this.createSource({
+      id: sourceId,
+      workspaceId: "workspace-1",
+      serverInstanceId: serverId,
+      sourceUrl: "https://api.example.test/openapi.json",
+      discoveryMethod: "test",
+      lastFetchedAt: new Date().toISOString()
+    });
+    await this.createDefinition({
+      id: `definition-${this.definitions.length}`,
+      sourceId,
+      name: "Example API",
+      version: "1.0.0",
+      rawSpecJson: "{}",
+      normalizedJson: JSON.stringify({ name: "Example API", version: "1.0.0", servers: [], operations }),
+      fetchedAt: new Date().toISOString()
+    });
   }
 }
 

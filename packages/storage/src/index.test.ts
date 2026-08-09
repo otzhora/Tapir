@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  createLocalTapirStorage,
   ensureDefaultWorkspace,
   openTapirDatabase,
   SqliteApiDefinitionRepository,
@@ -27,6 +28,23 @@ afterEach(async () => {
 });
 
 describe("SQLite storage", () => {
+  it("rolls back aggregate writes when a transaction fails", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "tapir-storage-"));
+    const storage = await createLocalTapirStorage(join(tempDir, "tapir.sqlite"));
+    db = storage.db;
+    await expect(storage.transaction.run(async () => {
+      await storage.servers.create({
+        id: "rolled-back-server",
+        workspaceId: storage.workspace.id,
+        name: "Temporary",
+        baseUrl: "https://example.test",
+        specUrl: "https://example.test/openapi.json",
+        apiDefinitionSourceId: null
+      });
+      throw new Error("stop");
+    })).rejects.toThrow("stop");
+    await expect(storage.servers.list(storage.workspace.id)).resolves.toEqual([]);
+  });
   it("runs migrations and records them", async () => {
     const db = await createDatabase();
 
@@ -119,7 +137,9 @@ describe("SQLite storage", () => {
     });
 
     await expect(servers.list(workspace.id)).resolves.toHaveLength(1);
-    await expect(definitions.latestForServer(server.id)).resolves.toMatchObject({ name: "Example API" });
+    await expect(definitions.latestNormalizedForServer(server.id)).resolves.toEqual({
+      normalizedJson: JSON.stringify({ name: "Example API", version: "1.0.0", operations: [] })
+    });
     await expect(serverVariables.listForServer(server.id)).resolves.toMatchObject([
       { key: "baseUrl", value: "https://api.example.test" }
     ]);

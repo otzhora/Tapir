@@ -93,7 +93,7 @@ export interface SaveServerVariablesResponse {
 export interface CallOperationRequest {
   serverId: string;
   requestDraftId?: string;
-  operation: NormalizedOperation;
+  operationId: string;
   values: Record<string, string>;
   body?: string;
   contentType?: string;
@@ -135,7 +135,19 @@ export interface CreateRequestDraftRequest {
 }
 
 export interface UpdateRequestDraftRequest {
-  draft: RequestDraft;
+  draft: Pick<RequestDraft,
+    | "id"
+    | "name"
+    | "isNameManual"
+    | "method"
+    | "path"
+    | "url"
+    | "parametersJson"
+    | "headersJson"
+    | "body"
+    | "contentType"
+    | "sortOrder"
+  >;
 }
 
 export interface ListRequestDraftsRequest {

@@ -15,7 +15,8 @@ export class FetchHttpExecutor implements HttpExecutor {
         method: request.method,
         headers: requestHeaders,
         body: fetchBody,
-        signal: controller.signal
+        signal: controller.signal,
+        redirect: "manual"
       });
       const body = await readLimitedText(response, maxResponseBodyBytes, "Response body");
       const headers = Object.fromEntries(response.headers.entries());

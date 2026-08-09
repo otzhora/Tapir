@@ -85,7 +85,7 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
   };
   return {
     request,
-    redactedRequest: redactRequest(request, input.authentications ?? [], resolve),
+    redactedRequest: redactSensitiveRequest(redactRequest(request, input.authentications ?? [], resolve)),
     validationIssues
   };
 }
@@ -107,6 +107,10 @@ export function prepareCustomRequest(input: PrepareCustomRequestInput): Prepared
   let url: URL | null = null;
   try {
     url = new URL(urlValue);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      validationIssues.push({ field: "url", message: "Custom request URL must use HTTP or HTTPS." });
+      url = null;
+    }
   } catch {
     validationIssues.push({ field: "url", message: "Custom request URL must be absolute." });
   }
@@ -149,9 +153,60 @@ export function prepareCustomRequest(input: PrepareCustomRequestInput): Prepared
   };
   return {
     request,
-    redactedRequest: request,
+    redactedRequest: redactSensitiveRequest(request),
     validationIssues
   };
+}
+
+export function redactSensitiveRequest(request: PreparedRequest): PreparedRequest;
+export function redactSensitiveRequest(request: null): null;
+export function redactSensitiveRequest(request: PreparedRequest | null): PreparedRequest | null;
+export function redactSensitiveRequest(request: PreparedRequest | null): PreparedRequest | null {
+  if (!request) return null;
+  const headers = redactSensitiveHeaders(request.headers);
+  let url = request.url;
+  try {
+    const parsed = new URL(request.url);
+    for (const name of [...parsed.searchParams.keys()]) {
+      if (sensitiveName(name)) parsed.searchParams.set(name, "********");
+    }
+    url = parsed.toString();
+  } catch {
+    // Invalid URLs are reported separately by request validation.
+  }
+  return { ...request, url, headers };
+}
+
+export function redactSensitiveHeaders(headers: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(headers).map(([name, value]) => [
+    name,
+    sensitiveName(name) ? redactHeaderValue(name, value) : value
+  ]));
+}
+
+export function redactUrlForHistory(value: string): string {
+  try {
+    const url = new URL(value);
+    for (const name of [...url.searchParams.keys()]) url.searchParams.set(name, "********");
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function sensitiveName(value: string): boolean {
+  return /authorization|proxy-authorization|cookie|set-cookie|token|secret|password|session|signature|credential|api[-_]?key/i.test(value);
+}
+
+function redactHeaderValue(name: string, value: string): string {
+  if (name.toLowerCase() === "authorization" || name.toLowerCase() === "proxy-authorization") {
+    const scheme = value.match(/^\s*([^\s]+)\s+/)?.[1];
+    return scheme ? `${scheme} ********` : "********";
+  }
+  if (name.toLowerCase() === "cookie" || name.toLowerCase() === "set-cookie") {
+    return value.split(";").map((part) => `${part.split("=", 1)[0]?.trim() || "cookie"}=********`).join("; ");
+  }
+  return "********";
 }
 
 function ensureTrailingSlash(value: string): string {
@@ -319,7 +374,13 @@ function splitArrayInput(value: string): string[] {
 
 function createUrl(path: string, baseUrl: string, validationIssues: PreparedRequestValidationIssue[]): URL {
   try {
-    return new URL(path, baseUrl);
+    const base = new URL(baseUrl);
+    const url = new URL(path, base);
+    if (url.origin !== base.origin) {
+      validationIssues.push({ field: "url", message: "OpenAPI operation paths cannot change the configured server origin." });
+      return base;
+    }
+    return url;
   } catch {
     validationIssues.push({ field: "url", message: "Request URL could not be prepared." });
     return new URL(path.replace(/^\//, ""), "http://tapir.invalid/");

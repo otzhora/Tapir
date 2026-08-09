@@ -29,9 +29,15 @@ The renderer talks to the main process through a narrow preload bridge. It does 
 
 ## Storage and Secrets
 
-SQLite stores local workspace data. API-key, bearer, and Basic authentication are represented as a `UserAuthProfile` plus a separate `SecretValue`, so secrets are not embedded into server records, request previews, history, or examples.
+SQLite stores local workspace data. API-key, bearer, and Basic authentication are represented as a `UserAuthProfile` plus a separate `SecretValue`, so configured credentials are not embedded into server records, request previews, history, or examples. User-authored request draft fields and history request snapshots are encrypted at rest because custom URLs, headers, parameters, and bodies can also contain credentials.
 
-For the desktop app, `SecretValue.encryptedOrPlainValue` is protected with Electron `safeStorage` when OS-backed encryption is available. If the host cannot provide encryption, the value falls back to plaintext while preserving the same repository interface.
+For the desktop app, sensitive local values are protected with Electron `safeStorage`. Tapir refuses to save new sensitive data when OS-backed encryption is unavailable; existing legacy plaintext values remain readable so they can be migrated without data loss.
+
+## Process Boundary
+
+IPC contracts are shared TypeScript types and are runtime-validated in the Electron main process. OpenAPI calls cross the boundary by server and operation identity only; the main process reloads the canonical stored operation before resolving authentication or preparing a request. Renderer-provided operation definitions are never authoritative.
+
+The packaged renderer is bound to its exact file URL. Unexpected navigation, new windows, subframe IPC, and renderer origins are denied, and the renderer runs with a restrictive Content Security Policy.
 
 ## OpenAPI Normalization
 

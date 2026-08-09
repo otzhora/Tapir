@@ -26,15 +26,14 @@ describe("useRequestDraftPersistence", () => {
     expect(updateRequestDraft).toHaveBeenNthCalledWith(1, { draft: expect.objectContaining({ name: "First edit" }) });
 
     first.resolve({ ...draft, name: "First edit", updatedAt: "2026-07-01T00:00:01.000Z" });
-    await firstSave;
-    expect(persistence.drafts.value[0]?.name).toBe("Second edit");
     await vi.waitFor(() => expect(updateRequestDraft).toHaveBeenCalledTimes(2));
+    expect(persistence.drafts.value[0]?.name).toBe("Second edit");
     expect(updateRequestDraft).toHaveBeenNthCalledWith(2, { draft: expect.objectContaining({ name: "Second edit" }) });
 
     second.resolve({ ...draft, name: "Second edit", updatedAt: "2026-07-01T00:00:02.000Z" });
-    await secondSave;
+    await Promise.all([firstSave, secondSave]);
     expect(persistence.drafts.value[0]).toMatchObject({ name: "Second edit", updatedAt: "2026-07-01T00:00:02.000Z" });
-    expect(persisted.map((value) => value.name)).toEqual(["Second edit", "Second edit"]);
+    expect(persisted.map((value) => value.name)).toEqual(["Second edit"]);
   });
 
   it("continues the save queue after a failed persistence attempt", async () => {

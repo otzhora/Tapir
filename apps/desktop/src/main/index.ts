@@ -1,20 +1,21 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import type {
   TapirIpcChannel,
   TapirIpcRequest,
   TapirIpcResponse
 } from "@tapir/core";
-import { TapirApplicationService } from "@tapir/core";
+import { parseTapirIpcRequest, TapirApplicationService } from "@tapir/core";
 import { BasicOpenApiNormalizer, FetchOpenApiDiscoveryService } from "@tapir/openapi";
-import { createLocalTapirStorage } from "@tapir/storage";
+import { createLocalTapirStorage, type SqliteDatabase } from "@tapir/storage";
 import { FetchHttpExecutor } from "./fetchHttpExecutor";
 import { assertTrustedRendererUrl, validateDevRendererUrl } from "./ipcSecurity";
 import { toIpcPayload } from "./ipcSerialization";
 import { SafeStorageAuthProfileRepository } from "./safeStorageAuthProfileRepository";
+import { SafeStorageHistoryRepository, SafeStorageRequestDraftRepository } from "./safeStorageDataRepositories";
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -22,6 +23,8 @@ const discovery = new FetchOpenApiDiscoveryService();
 const normalizer = new BasicOpenApiNormalizer();
 
 let tapir: TapirApplicationService;
+let database: SqliteDatabase | null = null;
+const trustedRendererUrls = new Map<number, string>();
 
 async function createServices() {
   const dataDir = join(app.getPath("userData"), "tapir-data");
@@ -29,9 +32,13 @@ async function createServices() {
   const storage = await createLocalTapirStorage(join(dataDir, "tapir.sqlite"), {
     nativeBinding: electronBetterSqliteBindingPath()
   });
+  database = storage.db;
+  const requestDrafts = new SafeStorageRequestDraftRepository(storage.requestDrafts);
   return new TapirApplicationService({
     ...storage,
     authProfiles: new SafeStorageAuthProfileRepository(storage.authProfiles),
+    history: new SafeStorageHistoryRepository(storage.history),
+    requestDrafts,
     discovery,
     normalizer,
     http: new FetchHttpExecutor()
@@ -83,6 +90,14 @@ async function createWindow(show = true): Promise<BrowserWindow> {
       webSecurity: true
     }
   });
+  const rendererUrl = devRendererUrl ?? pathToFileURL(join(__dirname, "../renderer/index.html")).toString();
+  const webContentsId = window.webContents.id;
+  trustedRendererUrls.set(webContentsId, rendererUrl);
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event, targetUrl) => {
+    if (targetUrl !== rendererUrl) event.preventDefault();
+  });
+  window.on("closed", () => trustedRendererUrls.delete(webContentsId));
 
   if (devRendererUrl) {
     await window.loadURL(devRendererUrl);
@@ -121,6 +136,12 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
+app.on("before-quit", () => {
+  if (!database?.open) return;
+  database.close();
+  database = null;
+});
+
 async function runPackagedSmoke(): Promise<void> {
   if (!app.isPackaged) throw new Error("Packaged smoke mode requires a packaged Electron application.");
   const baseUrl = process.env.TAPIR_SMOKE_BASE_URL;
@@ -131,7 +152,7 @@ async function runPackagedSmoke(): Promise<void> {
   const operation = added.normalized.operations.find((candidate) => candidate.operationId === "getHealth")
     ?? added.normalized.operations.find((candidate) => candidate.method === "GET" && candidate.securityRequirements.length === 0);
   if (!operation) throw new Error("Packaged smoke fixture has no unauthenticated GET operation.");
-  const call = await tapir.callOperation({ serverId: added.server.id, operation, values: {} });
+  const call = await tapir.callOperation({ serverId: added.server.id, operationId: operation.operationId, values: {} });
   const state = await tapir.getInitialState();
   const history = await tapir.listHistory({ workspaceId: state.workspace.id, limit: 10 });
   const databasePath = join(app.getPath("userData"), "tapir-data", "tapir.sqlite");
@@ -191,13 +212,16 @@ function handle<Channel extends TapirIpcChannel>(
   channel: Channel,
   handler: (request: TapirIpcRequest<Channel>) => Promise<TapirIpcResponse<Channel>>
 ): void {
-  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, request: TapirIpcRequest<Channel>) => {
+  ipcMain.handle(channel, async (event: IpcMainInvokeEvent, request: unknown) => {
     assertTrustedRenderer(event);
-    const response = await handler(request);
+    const response = await handler(parseTapirIpcRequest(channel, request));
     return toIpcPayload(response);
   });
 }
 
 function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
-  assertTrustedRendererUrl(event.senderFrame?.url, app.isPackaged);
+  if (!event.senderFrame || event.senderFrame.routingId !== event.sender.mainFrame.routingId) {
+    throw new Error("Blocked IPC call from an untrusted renderer.");
+  }
+  assertTrustedRendererUrl(event.senderFrame.url, trustedRendererUrls.get(event.sender.id));
 }

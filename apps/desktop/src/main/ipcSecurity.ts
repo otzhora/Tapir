@@ -7,19 +7,14 @@ export function validateDevRendererUrl(value: string, isPackaged: boolean): stri
   throw new Error("ELECTRON_RENDERER_URL must point to a local development server.");
 }
 
-export function assertTrustedRendererUrl(value: string | undefined, isPackaged: boolean): void {
+export function assertTrustedRendererUrl(value: string | undefined, expectedUrl: string | undefined): void {
   if (!value) throw new Error("Blocked IPC call from an untrusted renderer.");
-  if (isTrustedRendererUrl(value, isPackaged)) return;
+  if (expectedUrl && isTrustedRendererUrl(value, expectedUrl)) return;
   throw new Error("Blocked IPC call from an untrusted renderer.");
 }
 
-export function isTrustedRendererUrl(value: string, isPackaged: boolean): boolean {
-  const url = new URL(value);
-  if (url.protocol === "file:" && url.pathname.endsWith("/renderer/index.html")) return true;
-  if (!isPackaged && isLocalHostname(url.hostname)) {
-    return url.protocol === "http:" || url.protocol === "https:";
-  }
-  return false;
+export function isTrustedRendererUrl(value: string, expectedUrl: string): boolean {
+  return new URL(value).toString() === new URL(expectedUrl).toString();
 }
 
 function isLocalHostname(value: string): boolean {

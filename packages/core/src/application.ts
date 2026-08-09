@@ -38,9 +38,10 @@ import type {
   ServerVariableRepository,
   AuthProfileRepository,
   Workspace,
-  DiscoveryResult
+  DiscoveryResult,
+  TransactionRunner
 } from "./index";
-import { prepareCustomRequest, prepareOperationRequest, type PreparedAuthentication } from "./requestPreparation.js";
+import { prepareCustomRequest, prepareOperationRequest, redactSensitiveHeaders, redactUrlForHistory, type PreparedAuthentication } from "./requestPreparation.js";
 import { normalizeServerBaseUrl } from "./urlNormalization.js";
 
 export interface TapirApplicationDependencies {
@@ -54,21 +55,26 @@ export interface TapirApplicationDependencies {
   discovery: OpenApiDiscoveryService;
   normalizer: OpenApiNormalizer;
   http: HttpExecutor;
+  transaction?: TransactionRunner;
 }
 
 export class TapirApplicationService {
+  private normalizedDefinitions = new Map<string, NormalizedApiDefinition>();
+
   constructor(private dependencies: TapirApplicationDependencies) {}
 
   async getInitialState(): Promise<InitialStateResponse> {
     const { authProfiles, definitions, servers, serverVariables, workspace } = this.dependencies;
     const serverInstances = await servers.list(workspace.id);
     const enriched = await Promise.all(serverInstances.map(async (server) => {
-      const definition = await definitions.latestForServer(server.id);
+      const definition = await definitions.latestNormalizedForServer(server.id);
       const variables = await serverVariables.listForServer(server.id);
       const auth = await authProfiles.listForServer(server.id);
+      const normalized = definition ? JSON.parse(definition.normalizedJson) as NormalizedApiDefinition : null;
+      if (normalized) this.normalizedDefinitions.set(server.id, normalized);
       return {
         server,
-        definition: definition ? JSON.parse(definition.normalizedJson) as NormalizedApiDefinition : null,
+        definition: normalized,
         variables,
         authentication: auth.map((stored) => authenticationConfiguration(stored.profile))
       };
@@ -82,33 +88,37 @@ export class TapirApplicationService {
     const discovered = await discovery.discover(baseUrl);
     const normalized = normalizer.normalize(discovered.document);
     const now = new Date().toISOString();
-    const server = await servers.create({
-      id: crypto.randomUUID(),
-      workspaceId: workspace.id,
-      name: normalized.name,
-      baseUrl,
-      specUrl: discovered.specUrl,
-      apiDefinitionSourceId: null
+    const result = await this.inTransaction(async () => {
+      const server = await servers.create({
+        id: crypto.randomUUID(),
+        workspaceId: workspace.id,
+        name: normalized.name,
+        baseUrl,
+        specUrl: discovered.specUrl,
+        apiDefinitionSourceId: null
+      });
+      const source = await definitions.createSource({
+        id: crypto.randomUUID(),
+        workspaceId: workspace.id,
+        serverInstanceId: server.id,
+        sourceUrl: discovered.specUrl,
+        discoveryMethod: discovered.discoveryMethod,
+        lastFetchedAt: now
+      });
+      await servers.updateDefinitionSource(server.id, source.id);
+      await definitions.createDefinition({
+        id: crypto.randomUUID(),
+        sourceId: source.id,
+        name: normalized.name,
+        version: normalized.version,
+        rawSpecJson: JSON.stringify(discovered.document),
+        normalizedJson: JSON.stringify(normalized),
+        fetchedAt: now
+      });
+      return { server: { ...server, apiDefinitionSourceId: source.id }, normalized };
     });
-    const source = await definitions.createSource({
-      id: crypto.randomUUID(),
-      workspaceId: workspace.id,
-      serverInstanceId: server.id,
-      sourceUrl: discovered.specUrl,
-      discoveryMethod: discovered.discoveryMethod,
-      lastFetchedAt: now
-    });
-    await servers.updateDefinitionSource(server.id, source.id);
-    await definitions.createDefinition({
-      id: crypto.randomUUID(),
-      sourceId: source.id,
-      name: normalized.name,
-      version: normalized.version,
-      rawSpecJson: JSON.stringify(discovered.document),
-      normalizedJson: JSON.stringify(normalized),
-      fetchedAt: now
-    });
-    return { server: { ...server, apiDefinitionSourceId: source.id }, normalized };
+    this.normalizedDefinitions.set(result.server.id, normalized);
+    return result;
   }
 
   async refreshServerSchema(input: RefreshServerSchemaRequest): Promise<RefreshServerSchemaResponse> {
@@ -140,6 +150,7 @@ export class TapirApplicationService {
       .filter((draft) => draft.serverInstanceId === serverId && draft.sourceType === "custom")
       .map((draft) => ({ ...draft, serverInstanceId: null }));
     await this.dependencies.servers.delete(serverId, { detachCustomDrafts: true });
+    this.normalizedDefinitions.delete(serverId);
     return { detachedDrafts };
   }
 
@@ -149,39 +160,41 @@ export class TapirApplicationService {
   ): Promise<RefreshServerSchemaResponse> {
     const { definitions, normalizer, requestDrafts, servers, workspace } = this.dependencies;
 
-    const previousDefinition = await definitions.latestForServer(server.id);
-    const previousNormalized = previousDefinition ? JSON.parse(previousDefinition.normalizedJson) as NormalizedApiDefinition : null;
     const normalized = normalizer.normalize(discovered.document);
     const now = new Date().toISOString();
     const sourceId = crypto.randomUUID();
-
-    await definitions.createSource({
-      id: sourceId,
-      workspaceId: workspace.id,
-      serverInstanceId: server.id,
-      sourceUrl: discovered.specUrl,
-      discoveryMethod: discovered.discoveryMethod,
-      lastFetchedAt: now
+    const result = await this.inTransaction(async () => {
+      const previousDefinition = await definitions.latestNormalizedForServer(server.id);
+      const previousNormalized = previousDefinition ? JSON.parse(previousDefinition.normalizedJson) as NormalizedApiDefinition : null;
+      await definitions.createSource({
+        id: sourceId,
+        workspaceId: workspace.id,
+        serverInstanceId: server.id,
+        sourceUrl: discovered.specUrl,
+        discoveryMethod: discovered.discoveryMethod,
+        lastFetchedAt: now
+      });
+      const refreshedServer = await servers.updateAfterDefinitionRefresh(server.id, {
+        name: normalized.name,
+        specUrl: discovered.specUrl,
+        sourceId
+      });
+      await definitions.createDefinition({
+        id: crypto.randomUUID(),
+        sourceId,
+        name: normalized.name,
+        version: normalized.version,
+        rawSpecJson: JSON.stringify(discovered.document),
+        normalizedJson: JSON.stringify(normalized),
+        fetchedAt: now
+      });
+      const deprecatedDrafts = previousNormalized
+        ? await this.deprecateChangedOpenApiDrafts(server, previousNormalized, normalized, now)
+        : [];
+      return { server: refreshedServer, normalized, deprecatedDrafts };
     });
-    const refreshedServer = await servers.updateAfterDefinitionRefresh(server.id, {
-      name: normalized.name,
-      specUrl: discovered.specUrl,
-      sourceId
-    });
-    await definitions.createDefinition({
-      id: crypto.randomUUID(),
-      sourceId,
-      name: normalized.name,
-      version: normalized.version,
-      rawSpecJson: JSON.stringify(discovered.document),
-      normalizedJson: JSON.stringify(normalized),
-      fetchedAt: now
-    });
-
-    const deprecatedDrafts = previousNormalized
-      ? await this.deprecateChangedOpenApiDrafts(server, previousNormalized, normalized, now)
-      : [];
-    return { server: refreshedServer, normalized, deprecatedDrafts };
+    this.normalizedDefinitions.set(server.id, normalized);
+    return result;
   }
 
   async saveAuthentication(input: SaveAuthenticationRequest): Promise<ServerAuthenticationConfiguration> {
@@ -231,8 +244,9 @@ export class TapirApplicationService {
     const server = serverInstances.find((candidate) => candidate.id === input.serverId);
     if (!server) throw new Error("Server not found.");
 
+    const operation = await this.requireServerOperation(server.id, input.operationId);
     const variables = await serverVariables.listForServer(server.id);
-    const prepared = prepareOperationRequest(server.baseUrl, { ...input, variables, authentications: await this.operationAuthentications(server.id, input.operation) });
+    const prepared = prepareOperationRequest(server.baseUrl, { ...input, operation, variables, authentications: await this.operationAuthentications(server.id, operation) });
     if (prepared.validationIssues.length > 0) {
       throw new Error(prepared.validationIssues.map((issue) => issue.message).join(" "));
     }
@@ -241,14 +255,14 @@ export class TapirApplicationService {
     await history.create({
       workspaceId: workspace.id,
       serverInstanceId: server.id,
-      operationId: input.operation.operationId,
+      operationId: operation.operationId,
       requestDraftId: input.requestDraftId ?? null,
       requestSnapshotJson: JSON.stringify(prepared.redactedRequest),
       requestMethod: prepared.redactedRequest.method,
-      requestUrl: prepared.redactedRequest.url,
+      requestUrl: redactUrlForHistory(prepared.redactedRequest.url),
       draftName: await this.historyDraftName(input.requestDraftId),
       responseStatus: response.status,
-      responseHeadersJson: JSON.stringify(response.headers),
+      responseHeadersJson: JSON.stringify(redactSensitiveHeaders(response.headers)),
       responseBody: response.body,
       durationMs: response.durationMs
     });
@@ -261,8 +275,9 @@ export class TapirApplicationService {
     const serverInstances = await servers.list(workspace.id);
     const server = serverInstances.find((candidate) => candidate.id === input.serverId);
     if (!server) throw new Error("Server not found.");
+    const operation = await this.requireServerOperation(server.id, input.operationId);
     const variables = await serverVariables.listForServer(server.id);
-    const prepared = prepareOperationRequest(server.baseUrl, { ...input, variables, authentications: await this.operationAuthentications(server.id, input.operation) });
+    const prepared = prepareOperationRequest(server.baseUrl, { ...input, operation, variables, authentications: await this.operationAuthentications(server.id, operation) });
     return { ...prepared, request: prepared.redactedRequest };
   }
 
@@ -314,11 +329,10 @@ export class TapirApplicationService {
 
   async updateRequestDraft(input: UpdateRequestDraftRequest): Promise<RequestDraft> {
     const existing = await this.requireWorkspaceDraft(input.draft.id);
-    if (input.draft.serverInstanceId) await this.requireWorkspaceServer(input.draft.serverInstanceId);
     return this.dependencies.requestDrafts.update({
+      ...existing,
       ...input.draft,
-      id: existing.id,
-      workspaceId: this.dependencies.workspace.id
+      id: existing.id
     });
   }
 
@@ -345,10 +359,10 @@ export class TapirApplicationService {
       requestDraftId: input.requestDraftId ?? null,
       requestSnapshotJson: JSON.stringify(prepared.redactedRequest),
       requestMethod: prepared.redactedRequest.method,
-      requestUrl: prepared.redactedRequest.url,
+      requestUrl: redactUrlForHistory(prepared.redactedRequest.url),
       draftName: await this.historyDraftName(input.requestDraftId),
       responseStatus: response.status,
-      responseHeadersJson: JSON.stringify(response.headers),
+      responseHeadersJson: JSON.stringify(redactSensitiveHeaders(response.headers)),
       responseBody: response.body,
       durationMs: response.durationMs
     });
@@ -383,6 +397,19 @@ export class TapirApplicationService {
     return draft;
   }
 
+  private async requireServerOperation(serverId: string, operationId: string): Promise<NormalizedOperation> {
+    let normalized = this.normalizedDefinitions.get(serverId);
+    if (!normalized) {
+      const definition = await this.dependencies.definitions.latestNormalizedForServer(serverId);
+      if (!definition) throw new Error("OpenAPI definition not found.");
+      normalized = JSON.parse(definition.normalizedJson) as NormalizedApiDefinition;
+      this.normalizedDefinitions.set(serverId, normalized);
+    }
+    const operation = normalized.operations.find((candidate) => candidate.operationId === operationId);
+    if (!operation) throw new Error("OpenAPI operation not found.");
+    return operation;
+  }
+
   private async operationAuthentications(serverId: string, operation: NormalizedOperation): Promise<PreparedAuthentication[]> {
     if (operation.securityRequirements.length === 0) return [];
     const stored = await this.dependencies.authProfiles.listForServer(serverId);
@@ -398,6 +425,10 @@ export class TapirApplicationService {
       if (resolved.every((authentication): authentication is PreparedAuthentication => authentication !== null)) return resolved;
     }
     return [];
+  }
+
+  private inTransaction<Result>(work: () => Promise<Result>): Promise<Result> {
+    return this.dependencies.transaction?.run(work) ?? work();
   }
 
   private async deprecateChangedOpenApiDrafts(

@@ -8,7 +8,6 @@ import type {
   RequestDraftHeader,
   RequestDraftParameter
 } from "@tapir/core";
-import { plainOperation } from "./ipcPayloads";
 
 export function openApiDraftRequest(serverId: string, operation: NormalizedOperation, sortOrder = Date.now()): CreateRequestDraftRequest {
   return {
@@ -46,19 +45,10 @@ export function customDraftRequest(serverId: string | null, baseUrl: string, sor
 
 export function operationRequestPayload(draft: RequestDraft, serverId: string, selectedOperation: NormalizedOperation): CallOperationRequest {
   const parameters = parseDraftParameters(draft).filter((parameter) => parameter.enabled);
-  const operation = plainOperation(selectedOperation);
-  const normalizedParameters = new Map(operation.parameters.map((parameter) => [`${parameter.in}:${parameter.name}`, parameter]));
-  operation.parameters = parameters.map((parameter) => ({
-    ...normalizedParameters.get(parameter.id),
-    name: parameter.name,
-    in: parameter.in,
-    required: parameter.required ?? false,
-    description: parameter.description
-  }));
   return {
     serverId,
     requestDraftId: draft.id,
-    operation,
+    operationId: selectedOperation.operationId,
     values: Object.fromEntries(parameters.map((parameter) => [parameter.name, parameter.value])),
     body: draft.body,
     contentType: draft.contentType

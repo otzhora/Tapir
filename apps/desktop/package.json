@@ -23,21 +23,21 @@
     "@tapir/core": "0.1.0",
     "@tapir/openapi": "0.1.0",
     "@tapir/storage": "0.1.0",
-    "@vitejs/plugin-vue": "^6.0.7",
     "codemirror": "^6.0.2",
-    "electron": "^42.5.0",
-    "electron-vite": "^5.0.0",
     "lucide-vue-next": "^0.468.0",
     "vue": "^3.4.34"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.6",
     "@tailwindcss/vite": "^4.3.2",
+    "@vitejs/plugin-vue": "^6.0.7",
     "@vue/test-utils": "^2.4.11",
+    "electron": "^42.8.1",
+    "electron-vite": "^5.0.0",
     "happy-dom": "^20.10.6",
     "tailwindcss": "^4.3.2",
     "typescript": "^5.5.4",
-    "vite": "^8.1.0",
+    "vite": "^7.3.6",
     "vue-tsc": "^2.0.29"
   }
 }

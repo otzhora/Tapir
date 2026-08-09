@@ -1,4 +1,4 @@
-import { computed, reactive, ref } from "vue";
+import { computed, getCurrentInstance, onBeforeUnmount, reactive, ref } from "vue";
 import type { CollapsedPanels } from "../types";
 
 export function useResizablePanels() {
@@ -6,6 +6,7 @@ export function useResizablePanels() {
   const responseHeight = ref(260);
   const isResizingLayout = ref(false);
   const collapsedPanels = reactive<CollapsedPanels>({ operations: false, response: false });
+  let activeCleanup: (() => void) | null = null;
 
   const shellStyle = computed(() => ({
     gridTemplateColumns: `${leftWidth.value}px 6px minmax(260px, 1fr)`
@@ -25,12 +26,13 @@ export function useResizablePanels() {
     };
 
     const onUp = () => {
-      stopResizing(onMove, onUp);
+      stopResizing();
     };
 
-    startResizing();
+    startResizing(onMove, onUp);
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }
 
   function startResponseResize(event: MouseEvent): void {
@@ -44,12 +46,13 @@ export function useResizablePanels() {
 
     const onUp = () => {
       settlePanel("response", responseHeight, 150);
-      stopResizing(onMove, onUp);
+      stopResizing();
     };
 
-    startResizing();
+    startResizing(onMove, onUp);
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
   }
 
   function settlePanel(panel: keyof CollapsedPanels, size: { value: number }, expandedMin: number): void {
@@ -57,17 +60,25 @@ export function useResizablePanels() {
     if (!collapsedPanels[panel]) size.value = Math.max(size.value, expandedMin);
   }
 
-  function startResizing(): void {
+  function startResizing(onMove: (event: MouseEvent) => void, onUp: () => void): void {
+    stopResizing();
     isResizingLayout.value = true;
     document.body.classList.add("is-resizing");
+    activeCleanup = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
+    };
   }
 
-  function stopResizing(onMove: (event: MouseEvent) => void, onUp: () => void): void {
+  function stopResizing(): void {
+    activeCleanup?.();
+    activeCleanup = null;
     document.body.classList.remove("is-resizing");
     isResizingLayout.value = false;
-    window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("mouseup", onUp);
   }
+
+  if (getCurrentInstance()) onBeforeUnmount(stopResizing);
 
   return {
     collapsedPanels,

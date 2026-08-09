@@ -12,6 +12,7 @@ import type {
   PreparedOperationRequest,
   RequestDraft,
   ServerWithDefinition,
+  UpdateRequestDraftRequest,
   Workspace
 } from "@tapir/core";
 import App from "./App.vue";
@@ -522,8 +523,10 @@ function createMockBridge(): MockTapirBridge {
       state.drafts = [...state.drafts, draft];
       return draft;
     }),
-    updateRequestDraft: vi.fn(async ({ draft }: { draft: RequestDraft }) => {
-      const updated = { ...draft, updatedAt: "2026-07-01T00:00:01.000Z" };
+    updateRequestDraft: vi.fn(async ({ draft }: UpdateRequestDraftRequest) => {
+      const existing = state.drafts.find((candidate) => candidate.id === draft.id);
+      if (!existing) throw new Error("Request draft not found.");
+      const updated = { ...existing, ...draft, updatedAt: "2026-07-01T00:00:01.000Z" };
       state.drafts = state.drafts.map((candidate) => candidate.id === updated.id ? updated : candidate);
       return updated;
     }),

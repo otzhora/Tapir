@@ -12,7 +12,8 @@ interface UseRequestDraftPersistenceInput {
 
 export function useRequestDraftPersistence(input: UseRequestDraftPersistenceInput) {
   const drafts = ref<RequestDraft[]>([]);
-  const saveChains: Record<string, Promise<void> | undefined> = {};
+  const pendingDrafts: Record<string, RequestDraft | undefined> = {};
+  const saveDrains: Record<string, Promise<void> | undefined> = {};
 
   async function loadDrafts(): Promise<void> {
     const bridge = input.getBridge();
@@ -36,23 +37,27 @@ export function useRequestDraftPersistence(input: UseRequestDraftPersistenceInpu
     const bridge = input.getBridge();
     if (!bridge) return;
     drafts.value = drafts.value.map((draft) => draft.id === next.id ? next : draft);
+    pendingDrafts[next.id] = next;
+    const existingDrain = saveDrains[next.id];
+    if (existingDrain) return existingDrain;
 
-    const precedingSave = (saveChains[next.id] ?? Promise.resolve()).catch(() => undefined);
-    const save = precedingSave.then(async () => {
-      const latest = drafts.value.find((draft) => draft.id === next.id) ?? next;
-      const saved = await bridge.updateRequestDraft({ draft: latest });
-      const current = drafts.value.find((draft) => draft.id === saved.id);
-      if (current && editableDraftFieldsMatch(current, latest)) {
-        drafts.value = drafts.value.map((draft) => draft.id === saved.id ? saved : draft);
-        input.onDraftPersisted(saved);
-      } else {
-        input.onDraftPersisted(current ?? latest);
+    const drain = (async () => {
+      while (pendingDrafts[next.id]) {
+        const latest = pendingDrafts[next.id]!;
+        delete pendingDrafts[next.id];
+        const saved = await bridge.updateRequestDraft({ draft: latest });
+        const current = drafts.value.find((draft) => draft.id === saved.id);
+        if (current && editableDraftFieldsMatch(current, latest)) {
+          drafts.value = drafts.value.map((draft) => draft.id === saved.id ? saved : draft);
+          input.onDraftPersisted(saved);
+        }
       }
+    })();
+    const tracked = drain.finally(() => {
+      delete pendingDrafts[next.id];
+      if (saveDrains[next.id] === tracked) delete saveDrains[next.id];
     });
-    const tracked = save.finally(() => {
-      if (saveChains[next.id] === tracked) delete saveChains[next.id];
-    });
-    saveChains[next.id] = tracked;
+    saveDrains[next.id] = tracked;
     await tracked;
   }
 

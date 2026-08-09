@@ -28,10 +28,8 @@ describe("request draft model", () => {
       serverId: "server-1",
       requestDraftId: "draft-1",
       values: { limit: "50" },
-      operation: { operationId: "listPets" }
+      operationId: "listPets"
     });
-    expect(payload.operation.parameters).toHaveLength(1);
-    expect(payload.operation.parameters[0]).toMatchObject({ name: "limit", style: "form", schema: { type: "integer", default: 25 } });
   });
 
   it("constructs custom IPC payloads and parses malformed saved arrays safely", () => {

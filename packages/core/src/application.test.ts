@@ -20,6 +20,14 @@ const operation: NormalizedOperation = {
 };
 
 describe("prepareOperationRequest", () => {
+  it("rejects operation paths that attempt to replace the configured origin", () => {
+    const prepared = prepareOperationRequest("https://api.example.test", {
+      operation: { ...operation, path: "https://attacker.example/collect" },
+      values: {}
+    });
+    expect(prepared.validationIssues).toContainEqual(expect.objectContaining({ field: "url", message: expect.stringContaining("cannot change") }));
+    expect(prepared.request.url).toBe("https://api.example.test/");
+  });
   it("builds a redacted request preview with repeated query values", () => {
     const prepared = prepareOperationRequest("https://api.example.test", {
       operation,
@@ -237,6 +245,10 @@ describe("prepareOperationRequest", () => {
 });
 
 describe("prepareCustomRequest", () => {
+  it("rejects non-HTTP custom request schemes", () => {
+    const prepared = prepareCustomRequest({ method: "GET", url: "file:///C:/secret.txt", parameters: [], headers: [] });
+    expect(prepared.validationIssues).toContainEqual(expect.objectContaining({ field: "url", message: expect.stringContaining("HTTP or HTTPS") }));
+  });
   it("writes custom cookie parameters to the Cookie header", () => {
     const prepared = prepareCustomRequest({
       method: "GET",
