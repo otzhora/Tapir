@@ -134,6 +134,19 @@ async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCoun
   }
 }
 
+function serverUpdated(server: ServerWithDefinition): void {
+  workspaceServers.updateServer(server);
+}
+
+async function serverDeleted(serverId: string): Promise<void> {
+  workspaceServers.removeServer(serverId);
+  workspaceView.value = "requests";
+  await request.loadDrafts();
+  workspaceServers.selectedOperationId.value = workspaceServers.operations.value[0]?.operationId ?? CUSTOM_OPERATION_ID;
+  await nextTick();
+  await request.ensureActiveSpaceHasDraft();
+}
+
 </script>
 
 <template>
@@ -188,6 +201,9 @@ async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCoun
           v-if="workspaceView === 'serverConfiguration' && workspaceServers.selectedServer.value"
           :server="workspaceServers.selectedServer.value"
           @variables-saved="workspaceServers.updateServerVariables"
+          @server-updated="serverUpdated"
+          @server-refreshed="serverRefreshed"
+          @server-deleted="serverDeleted"
         />
         <RequestWorkspace
           v-else

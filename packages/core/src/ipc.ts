@@ -52,6 +52,17 @@ export interface RefreshServerSchemaResponse {
   deprecatedDrafts: RequestDraft[];
 }
 
+export interface UpdateServerConfigurationRequest {
+  serverId: string;
+  name: string;
+  baseUrl: string;
+  specUrl: string;
+}
+
+export interface DeleteServerResponse {
+  detachedDrafts: RequestDraft[];
+}
+
 export interface SaveAuthenticationRequest {
   serverId: string;
   schemeKey: string;
@@ -155,6 +166,18 @@ export interface TapirIpcContract {
   "tapir:refreshServerSchema": {
     request: RefreshServerSchemaRequest;
     response: RefreshServerSchemaResponse;
+  };
+  "tapir:rediscoverServerSchema": {
+    request: RefreshServerSchemaRequest;
+    response: RefreshServerSchemaResponse;
+  };
+  "tapir:updateServerConfiguration": {
+    request: UpdateServerConfigurationRequest;
+    response: ServerInstance;
+  };
+  "tapir:deleteServer": {
+    request: string;
+    response: DeleteServerResponse;
   };
   "tapir:saveAuthentication": {
     request: SaveAuthenticationRequest;

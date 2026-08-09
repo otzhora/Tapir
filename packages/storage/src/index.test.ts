@@ -8,6 +8,7 @@ import {
   SqliteApiDefinitionRepository,
   SqliteAuthProfileRepository,
   SqliteHistoryRepository,
+  SqliteRequestDraftRepository,
   SqliteServerVariableRepository,
   SqliteServerRepository,
   type SqliteDatabase
@@ -48,6 +49,7 @@ describe("SQLite storage", () => {
     const serverVariables = new SqliteServerVariableRepository(db);
     const authProfiles = new SqliteAuthProfileRepository(db);
     const history = new SqliteHistoryRepository(db);
+    const requestDrafts = new SqliteRequestDraftRepository(db);
 
     const server = await servers.create({
       id: "server-1",
@@ -101,6 +103,16 @@ describe("SQLite storage", () => {
       responseBody: "[]",
       durationMs: 42
     });
+    await requestDrafts.create({
+      id: "draft-1", workspaceId: workspace.id, serverInstanceId: server.id, sourceType: "openapi", operationId: "listPets",
+      deprecatedAt: null, deprecationReason: null, name: "List pets", isNameManual: false, method: "GET", path: "/pets", url: "",
+      parametersJson: "[]", headersJson: "[]", body: "", contentType: "application/json", sortOrder: 1
+    });
+    await requestDrafts.create({
+      id: "custom-1", workspaceId: workspace.id, serverInstanceId: server.id, sourceType: "custom", operationId: null,
+      deprecatedAt: null, deprecationReason: null, name: "Custom check", isNameManual: true, method: "GET", path: "", url: "https://api.example.test/status",
+      parametersJson: "[]", headersJson: "[]", body: "", contentType: "application/json", sortOrder: 2
+    });
 
     await expect(servers.list(workspace.id)).resolves.toHaveLength(1);
     await expect(definitions.latestForServer(server.id)).resolves.toMatchObject({ name: "Example API" });
@@ -113,6 +125,19 @@ describe("SQLite storage", () => {
     await expect(history.listForServer(server.id)).resolves.toMatchObject([
       { operationId: "listPets", responseStatus: 200, durationMs: 42 }
     ]);
+
+    const updated = await servers.updateConfiguration(server.id, {
+      name: "Renamed API",
+      baseUrl: "https://api.example.test/v2",
+      specUrl: "https://api.example.test/v2/openapi.json"
+    });
+    expect(updated).toMatchObject({ name: "Renamed API", baseUrl: "https://api.example.test/v2", specUrl: "https://api.example.test/v2/openapi.json" });
+
+    await servers.delete(server.id, { detachCustomDrafts: true });
+    for (const table of ["server_instances", "server_variables", "api_definition_sources", "api_definitions", "user_auth_profiles", "secret_values", "call_history_entries"]) {
+      expect((db.prepare(`select count(*) as count from ${table}`).get() as { count: number }).count, table).toBe(0);
+    }
+    await expect(requestDrafts.listForWorkspace(workspace.id)).resolves.toMatchObject([{ id: "custom-1", serverInstanceId: null }]);
   });
 
   it("rejects duplicate variable keys for a server", async () => {

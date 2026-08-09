@@ -47,6 +47,21 @@ export class FetchOpenApiDiscoveryService implements OpenApiDiscoveryService {
 
     throw new Error(`Could not discover an OpenAPI JSON document. Tried ${errors.join("; ")}`);
   }
+
+  async fetch(specUrl: string): Promise<DiscoveryResult> {
+    const normalizedUrl = normalizeHttpUrl(specUrl, "OpenAPI document URL");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), discoveryTimeoutMs);
+    try {
+      const response = await fetch(normalizedUrl, { headers: { accept: "application/json" }, signal: controller.signal });
+      if (!response.ok) throw new Error(`OpenAPI document returned HTTP ${response.status}.`);
+      const document = JSON.parse(await readLimitedText(response, maxOpenApiDocumentBytes, "OpenAPI document")) as unknown;
+      if (!isOpenApiDocument(document)) throw new Error("Configured URL did not return an OpenAPI document.");
+      return { specUrl: normalizedUrl, discoveryMethod: "configured-url", document };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -55,6 +70,12 @@ function normalizeBaseUrl(baseUrl: string): string {
   url.pathname = "/";
   url.search = "";
   url.hash = "";
+  return url.toString();
+}
+
+function normalizeHttpUrl(value: string, label: string): string {
+  const url = new URL(value);
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`${label} must use HTTP or HTTPS.`);
   return url.toString();
 }
 

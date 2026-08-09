@@ -10,7 +10,8 @@ import type {
   TapirIpcChannel,
   TapirIpcRequest,
   TapirIpcResponse,
-  UpdateRequestDraftRequest
+  UpdateRequestDraftRequest,
+  UpdateServerConfigurationRequest
 } from "@tapir/core";
 
 function invoke<Channel extends TapirIpcChannel>(
@@ -24,6 +25,9 @@ const api = {
   getInitialState: () => invoke("tapir:getInitialState", undefined),
   addServer: (baseUrl: string) => invoke("tapir:addServer", { baseUrl }),
   refreshServerSchema: (serverId: string) => invoke("tapir:refreshServerSchema", { serverId }),
+  rediscoverServerSchema: (serverId: string) => invoke("tapir:rediscoverServerSchema", { serverId }),
+  updateServerConfiguration: (input: UpdateServerConfigurationRequest) => invoke("tapir:updateServerConfiguration", input),
+  deleteServer: (serverId: string) => invoke("tapir:deleteServer", serverId),
   saveAuthentication: (input: SaveAuthenticationRequest) => invoke("tapir:saveAuthentication", input),
   deleteAuthentication: (input: DeleteAuthenticationRequest) => invoke("tapir:deleteAuthentication", input),
   saveServerVariables: (input: SaveServerVariablesRequest) => invoke("tapir:saveServerVariables", input),

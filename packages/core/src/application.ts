@@ -12,11 +12,13 @@ import type {
   RefreshServerSchemaRequest,
   RefreshServerSchemaResponse,
   DeleteAuthenticationRequest,
+  DeleteServerResponse,
   SaveAuthenticationRequest,
   ServerAuthenticationConfiguration,
   SaveServerVariablesRequest,
   SaveServerVariablesResponse,
-  UpdateRequestDraftRequest
+  UpdateRequestDraftRequest,
+  UpdateServerConfigurationRequest
 } from "./ipc";
 import type {
   ApiDefinitionRepository,
@@ -29,10 +31,12 @@ import type {
   RequestDraft,
   RequestDraftRepository,
   RequestDraftParameter,
+  ServerInstance,
   ServerRepository,
   ServerVariableRepository,
   AuthProfileRepository,
-  Workspace
+  Workspace,
+  DiscoveryResult
 } from "./index";
 import { prepareCustomRequest, prepareOperationRequest, type PreparedAuthentication } from "./requestPreparation.js";
 import { normalizeServerBaseUrl } from "./urlNormalization.js";
@@ -106,14 +110,45 @@ export class TapirApplicationService {
   }
 
   async refreshServerSchema(input: RefreshServerSchemaRequest): Promise<RefreshServerSchemaResponse> {
-    const { definitions, discovery, normalizer, requestDrafts, servers, workspace } = this.dependencies;
+    const { discovery, servers, workspace } = this.dependencies;
     const serverInstances = await servers.list(workspace.id);
     const server = serverInstances.find((candidate) => candidate.id === input.serverId);
     if (!server) throw new Error("Server not found.");
+    return this.persistRefreshedDefinition(server, await discovery.fetch(server.specUrl));
+  }
+
+  async rediscoverServerSchema(input: RefreshServerSchemaRequest): Promise<RefreshServerSchemaResponse> {
+    const server = await this.requireWorkspaceServer(input.serverId);
+    return this.persistRefreshedDefinition(server, await this.dependencies.discovery.discover(server.baseUrl));
+  }
+
+  async updateServerConfiguration(input: UpdateServerConfigurationRequest) {
+    const server = await this.requireWorkspaceServer(input.serverId);
+    const name = input.name.trim();
+    if (!name) throw new Error("Server name is required.");
+    const baseUrl = normalizeServerBaseUrl(input.baseUrl);
+    const specUrl = normalizeHttpUrl(input.specUrl, "OpenAPI document URL");
+    return this.dependencies.servers.updateConfiguration(server.id, { name, baseUrl, specUrl });
+  }
+
+  async deleteServer(serverId: string): Promise<DeleteServerResponse> {
+    await this.requireWorkspaceServer(serverId);
+    const drafts = await this.dependencies.requestDrafts.listForWorkspace(this.dependencies.workspace.id);
+    const detachedDrafts = drafts
+      .filter((draft) => draft.serverInstanceId === serverId && draft.sourceType === "custom")
+      .map((draft) => ({ ...draft, serverInstanceId: null }));
+    await this.dependencies.servers.delete(serverId, { detachCustomDrafts: true });
+    return { detachedDrafts };
+  }
+
+  private async persistRefreshedDefinition(
+    server: ServerInstance,
+    discovered: DiscoveryResult
+  ): Promise<RefreshServerSchemaResponse> {
+    const { definitions, normalizer, requestDrafts, servers, workspace } = this.dependencies;
 
     const previousDefinition = await definitions.latestForServer(server.id);
     const previousNormalized = previousDefinition ? JSON.parse(previousDefinition.normalizedJson) as NormalizedApiDefinition : null;
-    const discovered = await discovery.discover(server.baseUrl);
     const normalized = normalizer.normalize(discovered.document);
     const now = new Date().toISOString();
     const sourceId = crypto.randomUUID();
@@ -452,6 +487,17 @@ function parseDraftParameters(draft: RequestDraft): RequestDraftParameter[] {
 
 function stableJson(value: unknown): string {
   return JSON.stringify(sortJson(value));
+}
+
+function normalizeHttpUrl(value: string, label: string): string {
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw new Error(`${label} must be an absolute URL.`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`${label} must use HTTP or HTTPS.`);
+  return url.toString();
 }
 
 function sortJson(value: unknown): unknown {

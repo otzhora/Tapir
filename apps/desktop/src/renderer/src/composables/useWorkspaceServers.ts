@@ -42,6 +42,11 @@ export function useWorkspaceServers(setErrorMessage: (message: string) => void) 
     servers.value = servers.value.map((item) => item.server.id === serverId ? { ...item, variables } : item);
   }
 
+  function removeServer(serverId: string): void {
+    servers.value = servers.value.filter((item) => item.server.id !== serverId);
+    if (selectedServerId.value === serverId) selectedServerId.value = servers.value[0]?.server.id ?? null;
+  }
+
   function selectOperation(operation: NormalizedOperation): void {
     selectedOperationId.value = operation.operationId;
   }
@@ -57,6 +62,7 @@ export function useWorkspaceServers(setErrorMessage: (message: string) => void) 
     groupedOperations,
     loadInitialState,
     operations,
+    removeServer,
     selectOperation,
     selectedOperation,
     selectedOperationId,

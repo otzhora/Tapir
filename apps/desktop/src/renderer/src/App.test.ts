@@ -134,7 +134,7 @@ describe("desktop renderer app", () => {
     expect(JSON.stringify(await bridge.getInitialState())).not.toContain("renderer-secret");
   });
 
-  it("opens server configuration and saves variables outside the sidebar", async () => {
+  it("edits and deletes a server while saving variables outside the sidebar", async () => {
     const wrapper = mountApp();
     await settle();
 
@@ -145,6 +145,18 @@ describe("desktop renderer app", () => {
     expect(wrapper.text()).toContain("Variables");
     expect(wrapper.find("button[title='Configure server']").exists()).toBe(true);
     expect(wrapper.find("[title='Drag to resize response']").exists()).toBe(false);
+
+    await wrapper.find("input[placeholder='Example API']").setValue("Renamed API");
+    await wrapper.findAll("input[placeholder='https://api.example.com']").at(-1)?.setValue("https://renamed.example.test");
+    await wrapper.find("input[placeholder='https://api.example.com/openapi.json']").setValue("https://renamed.example.test/schema.json");
+    await wrapper.findAll("button").find((button) => button.text().includes("Save configuration"))?.trigger("click");
+    await settle();
+    expect(bridge.updateServerConfiguration).toHaveBeenCalledWith({
+      serverId: "server-1", name: "Renamed API", baseUrl: "https://renamed.example.test", specUrl: "https://renamed.example.test/schema.json"
+    });
+
+    await wrapper.findAll("button").find((button) => button.text().includes("Variables"))?.trigger("click");
+    await settle();
 
     await wrapper.findAll("button").find((button) => button.text().includes("Add variable"))?.trigger("click");
     await wrapper.find("input[placeholder='baseUrl']").setValue("tenant");
@@ -157,6 +169,15 @@ describe("desktop renderer app", () => {
       variables: [{ key: "tenant", value: "acme" }]
     });
     expect(wrapper.text()).toContain("Variables saved.");
+
+    await wrapper.findAll("button").find((button) => button.text() === "General")?.trigger("click");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await wrapper.findAll("button").find((button) => button.text() === "Delete")?.trigger("click");
+    expect(bridge.deleteServer).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    await wrapper.findAll("button").find((button) => button.text() === "Delete")?.trigger("click");
+    await settle();
+    expect(bridge.deleteServer).toHaveBeenCalledWith("server-1");
   });
 });
 
@@ -205,6 +226,9 @@ function createMockBridge(): MockTapirBridge {
     getInitialState: vi.fn(async () => ({ workspace, servers: [{ ...serverWithDefinition, authentication: state.authentication }] })),
     addServer: vi.fn(),
     refreshServerSchema: vi.fn(),
+    rediscoverServerSchema: vi.fn(),
+    updateServerConfiguration: vi.fn(async (input) => ({ ...serverWithDefinition.server, ...input })),
+    deleteServer: vi.fn(async () => ({ detachedDrafts: [] })),
     saveAuthentication: vi.fn(async (input) => {
       const configuration = { schemeKey: input.schemeKey, type: input.type, parameterName: input.parameterName, location: input.location, username: input.username, configured: true as const };
       state.authentication = [...state.authentication.filter((item) => item.schemeKey !== input.schemeKey), configuration];

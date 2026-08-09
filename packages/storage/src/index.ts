@@ -104,6 +104,32 @@ export class SqliteServerRepository implements ServerRepository {
     this.db.prepare("update server_instances set api_definition_source_id = ?, updated_at = ? where id = ?")
       .run(sourceId, new Date().toISOString(), serverId);
   }
+
+  async updateConfiguration(serverId: string, input: { name: string; baseUrl: string; specUrl: string }): Promise<ServerInstance> {
+    this.db.prepare(`
+      update server_instances set name = ?, base_url = ?, spec_url = ?, updated_at = ? where id = ?
+    `).run(input.name, input.baseUrl, input.specUrl, new Date().toISOString(), serverId);
+    const row = this.db.prepare("select * from server_instances where id = ?").get(serverId) as DbServer | undefined;
+    if (!row) throw new Error("Server not found.");
+    return mapServer(row);
+  }
+
+  async delete(serverId: string, options: { detachCustomDrafts: boolean }): Promise<void> {
+    this.db.transaction(() => {
+      if (options.detachCustomDrafts) {
+        this.db.prepare("update request_drafts set server_instance_id = null, updated_at = ? where server_instance_id = ? and source_type = 'custom'")
+          .run(new Date().toISOString(), serverId);
+      }
+      this.db.prepare("delete from call_history_entries where server_instance_id = ?").run(serverId);
+      this.db.prepare("delete from request_drafts where server_instance_id = ?").run(serverId);
+      this.db.prepare("delete from server_variables where server_instance_id = ?").run(serverId);
+      this.db.prepare("delete from secret_values where auth_profile_id in (select id from user_auth_profiles where server_instance_id = ?)").run(serverId);
+      this.db.prepare("delete from user_auth_profiles where server_instance_id = ?").run(serverId);
+      this.db.prepare("delete from api_definitions where source_id in (select id from api_definition_sources where server_instance_id = ?)").run(serverId);
+      this.db.prepare("delete from api_definition_sources where server_instance_id = ?").run(serverId);
+      this.db.prepare("delete from server_instances where id = ?").run(serverId);
+    })();
+  }
 }
 
 export class SqliteServerVariableRepository implements ServerVariableRepository {

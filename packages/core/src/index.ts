@@ -203,6 +203,8 @@ export interface ServerRepository {
   list(workspaceId: string): Promise<ServerInstance[]>;
   updateAfterDefinitionRefresh(serverId: string, input: { name: string; specUrl: string; sourceId: string }): Promise<ServerInstance>;
   updateDefinitionSource(serverId: string, sourceId: string): Promise<void>;
+  updateConfiguration(serverId: string, input: { name: string; baseUrl: string; specUrl: string }): Promise<ServerInstance>;
+  delete(serverId: string, options: { detachCustomDrafts: boolean }): Promise<void>;
 }
 
 export interface ServerVariableRepository {
@@ -260,6 +262,7 @@ export interface DiscoveryResult {
 
 export interface OpenApiDiscoveryService {
   discover(baseUrl: string): Promise<DiscoveryResult>;
+  fetch(specUrl: string): Promise<DiscoveryResult>;
 }
 
 export interface OpenApiNormalizer {

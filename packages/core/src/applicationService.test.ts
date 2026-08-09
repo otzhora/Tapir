@@ -235,6 +235,43 @@ describe("TapirApplicationService", () => {
     });
   });
 
+  it("updates, refreshes, rediscovers, and deletes servers while retaining detached custom drafts", async () => {
+    const workspace = testWorkspace();
+    const servers = new MemoryServerRepository();
+    const definitions = new MemoryDefinitionRepository();
+    const requestDrafts = new MemoryRequestDraftRepository();
+    await servers.create({ id: "server-1", workspaceId: workspace.id, name: "Old API", baseUrl: "https://old.example.test", specUrl: "https://old.example.test/openapi.json", apiDefinitionSourceId: null });
+    await requestDrafts.create({
+      id: "custom-1", workspaceId: workspace.id, serverInstanceId: "server-1", sourceType: "custom", operationId: null,
+      deprecatedAt: null, deprecationReason: null, name: "Custom check", isNameManual: true, method: "GET", path: "", url: "https://old.example.test/status",
+      parametersJson: "[]", headersJson: "[]", body: "", contentType: "application/json", sortOrder: 1
+    });
+    const fetched: string[] = [];
+    const discovered: string[] = [];
+    const discoveryResult = { specUrl: "https://new.example.test/schema/openapi.json", discoveryMethod: "configured-url", document: {} };
+    const service = new TapirApplicationService({
+      workspace, servers, definitions, requestDrafts, serverVariables: unusedServerVariables(), authProfiles: unusedAuthProfiles(), history: unusedHistory(), http: unusedHttp(),
+      discovery: {
+        async fetch(url) { fetched.push(url); return { ...discoveryResult, specUrl: url }; },
+        async discover(url) { discovered.push(url); return discoveryResult; }
+      },
+      normalizer: fixedNormalizer()
+    });
+
+    const updated = await service.updateServerConfiguration({
+      serverId: "server-1", name: "New API", baseUrl: "new.example.test/v2", specUrl: "https://new.example.test/schema/openapi.json"
+    });
+    expect(updated).toMatchObject({ name: "New API", baseUrl: "https://new.example.test/v2", specUrl: "https://new.example.test/schema/openapi.json" });
+    await service.refreshServerSchema({ serverId: "server-1" });
+    await service.rediscoverServerSchema({ serverId: "server-1" });
+    expect(fetched).toEqual(["https://new.example.test/schema/openapi.json"]);
+    expect(discovered).toEqual(["https://new.example.test/v2"]);
+
+    const deletion = await service.deleteServer("server-1");
+    expect(deletion.detachedDrafts).toMatchObject([{ id: "custom-1", serverInstanceId: null }]);
+    await expect(servers.list(workspace.id)).resolves.toEqual([]);
+  });
+
   it("rejects history and draft changes outside the active workspace", async () => {
     const workspace: Workspace = {
       id: "workspace-1",
@@ -358,6 +395,18 @@ class MemoryServerRepository implements ServerRepository {
     this.servers = this.servers.map((server) => server.id === serverId ? updated : server);
     return updated;
   }
+
+  async updateConfiguration(serverId: string, input: { name: string; baseUrl: string; specUrl: string }): Promise<ServerInstance> {
+    const existing = this.servers.find((server) => server.id === serverId);
+    if (!existing) throw new Error("Server not found.");
+    const updated = { ...existing, ...input, updatedAt: "2026-07-01T00:00:00.000Z" };
+    this.servers = this.servers.map((server) => server.id === serverId ? updated : server);
+    return updated;
+  }
+
+  async delete(serverId: string, _options: { detachCustomDrafts: boolean }): Promise<void> {
+    this.servers = this.servers.filter((server) => server.id !== serverId);
+  }
 }
 
 class MemoryDefinitionRepository implements ApiDefinitionRepository {
@@ -407,14 +456,14 @@ class MemoryRequestDraftRepository implements RequestDraftRepository {
 }
 
 function fixedDiscovery(): OpenApiDiscoveryService {
-  return {
-    async discover() {
-      return {
+  const result = {
         specUrl: "https://localhost:5052/openapi.json",
         discoveryMethod: "/openapi.json",
         document: { openapi: "3.0.3", info: { title: "Example API", version: "1.0.0" }, paths: {} }
       };
-    }
+  return {
+    async discover() { return result; },
+    async fetch() { return result; }
   };
 }
 

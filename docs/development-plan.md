@@ -87,7 +87,7 @@ Completion evidence:
 
 ## Phase 3 — Server lifecycle management
 
-Status: `Planned`.
+Status: `Completed` on 2026-08-09.
 
 Goal: let users maintain servers without manually deleting the local database.
 
@@ -105,6 +105,15 @@ Acceptance criteria:
 - Repository operations are transactional and workspace-scoped.
 - Foreign-key behavior and deletion semantics have storage tests.
 - Renderer tests cover editing, cancellation, deletion confirmation, and selection fallback.
+
+Completion evidence:
+
+- Server names, base URLs, and explicit OpenAPI document URLs are editable and validated.
+- Configured-document refresh and base-URL rediscovery are separate explicit actions.
+- Deletion confirmation documents the retention policy: custom drafts are detached and retained; OpenAPI drafts and all other server-owned data are removed.
+- SQLite performs draft detachment and dependent-record cleanup in one transaction.
+- Storage, service, and renderer tests cover editing, both refresh paths, cancellation, deletion, cleanup, and fallback behavior.
+- Typechecking, 41 tests, fixture smoke tests, and the production build pass.
 
 ## Phase 4 — Schema-assisted request authoring
 
@@ -223,3 +232,5 @@ Acceptance criteria:
 - Recorded Phase 1 as completed.
 - Committed Phase 1 as `dc7b8aa` (`Fix OpenAPI parameter serialization`).
 - Completed Phase 2 authentication; commit recorded after verification.
+- Committed Phase 2 as `08bf45f` (`Expand OpenAPI authentication support`).
+- Completed Phase 3 server lifecycle management; commit recorded after verification.
