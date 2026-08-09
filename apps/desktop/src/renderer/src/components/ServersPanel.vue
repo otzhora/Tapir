@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { Beaker, ChevronRight, Plus, RefreshCw, Server, Settings } from "lucide-vue-next";
 import type { NormalizedOperation, ServerWithDefinition, Workspace } from "@tapir/core";
 import { CUSTOM_OPERATION_ID } from "../composables/useOperationRequest";
@@ -35,6 +35,9 @@ const schemaMessage = ref("");
 const isAddingServer = ref(false);
 const refreshingServerIds = ref(new Set<string>());
 const expandedServerId = ref<string | null>(props.selectedServerId);
+const collapsedOperationGroups = ref(new Set<string>());
+const areAllOperationGroupsCollapsed = computed(() => props.groupedOperations.length > 0
+  && props.groupedOperations.every((group) => !isOperationGroupExpanded(group.name)));
 
 watch(() => props.selectedServerId, (serverId, previousServerId) => {
   if (serverId !== previousServerId) expandedServerId.value = serverId;
@@ -47,6 +50,32 @@ function activateServer(serverId: string): void {
   }
   expandedServerId.value = serverId;
   emit("selectServer", serverId);
+}
+
+function operationGroupKey(groupName: string): string {
+  return `${props.selectedServerId ?? ""}:${groupName}`;
+}
+
+function isOperationGroupExpanded(groupName: string): boolean {
+  return !collapsedOperationGroups.value.has(operationGroupKey(groupName));
+}
+
+function toggleOperationGroup(groupName: string): void {
+  const key = operationGroupKey(groupName);
+  const next = new Set(collapsedOperationGroups.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  collapsedOperationGroups.value = next;
+}
+
+function toggleAllOperationGroups(): void {
+  const next = new Set(collapsedOperationGroups.value);
+  for (const group of props.groupedOperations) {
+    const key = operationGroupKey(group.name);
+    if (areAllOperationGroupsCollapsed.value) next.delete(key);
+    else next.add(key);
+  }
+  collapsedOperationGroups.value = next;
 }
 
 async function addServer(): Promise<void> {
@@ -155,8 +184,17 @@ function toErrorMessage(error: unknown): string {
           </div>
 
           <div v-if="item.server.id === selectedServerId && expandedServerId === item.server.id" class="ml-3 grid gap-0.5 border-l border-[var(--tapir-border)] pl-2">
-            <div :class="[eyebrowClass, 'mb-0.5 flex items-center justify-between px-2 py-1']">
+            <div :class="[eyebrowClass, 'mb-0.5 flex items-center gap-2 px-2 py-1']">
               <span>Operations</span>
+              <button
+                class="ml-auto rounded px-1.5 py-0.5 normal-case transition hover:bg-[var(--tapir-bg-control)] hover:text-[var(--tapir-text-strong)] disabled:cursor-default disabled:opacity-50"
+                :disabled="groupedOperations.length === 0"
+                :title="areAllOperationGroupsCollapsed ? 'Expand all schema sections' : 'Collapse all schema sections'"
+                type="button"
+                @click="toggleAllOperationGroups"
+              >
+                {{ areAllOperationGroupsCollapsed ? "Expand all" : "Collapse all" }}
+              </button>
               <strong>{{ operationsCount }}</strong>
             </div>
             <button :class="[itemClass, 'grid-cols-[auto_minmax(0,1fr)_auto] items-center px-2 py-1.5', selectedOperationId === CUSTOM_OPERATION_ID && activeItemClass]" @click="emit('selectCustom')">
@@ -169,15 +207,26 @@ function toErrorMessage(error: unknown): string {
             </button>
 
             <div v-for="group in groupedOperations" :key="group.name" class="grid gap-0.5">
-              <h2 :class="['mb-0 mt-1.5 px-2 py-1 text-[11px] font-bold uppercase', subtleTextClass]">{{ group.name }}</h2>
-              <button v-for="operation in group.items" :key="operation.operationId" :class="[itemClass, 'grid-cols-[auto_minmax(0,1fr)_auto] items-center px-2 py-1.5', operation.operationId === selectedOperationId && activeItemClass]" :title="`${operation.method} ${operation.path} — ${operation.summary || operation.operationId}`" @click="emit('selectOperation', operation)">
-                <MethodBadge :method="operation.method" />
-                <span class="flex min-w-0 items-baseline gap-2 overflow-hidden">
-                  <strong class="truncate">{{ operation.summary || operation.operationId }}</strong>
-                  <small :class="['shrink truncate', mutedTextClass]">{{ operation.path }}</small>
-                </span>
-                <Plus :size="16" :class="['ml-auto shrink-0 hover:text-[var(--tapir-text-strong)]', mutedTextClass]" @click.stop="emit('addOperationRequest', operation)" />
+              <button
+                :aria-expanded="isOperationGroupExpanded(group.name)"
+                :class="['mt-1.5 flex w-full items-center gap-1 rounded px-2 py-1 text-left text-[11px] font-bold uppercase transition hover:bg-[var(--tapir-bg-control)] hover:text-[var(--tapir-text-strong)]', subtleTextClass]"
+                type="button"
+                @click="toggleOperationGroup(group.name)"
+              >
+                <ChevronRight :size="13" :class="['shrink-0 transition-transform', isOperationGroupExpanded(group.name) && 'rotate-90']" />
+                <span class="min-w-0 flex-1 truncate">{{ group.name }}</span>
+                <span>{{ group.items.length }}</span>
               </button>
+              <template v-if="isOperationGroupExpanded(group.name)">
+                <button v-for="operation in group.items" :key="operation.operationId" :class="[itemClass, 'grid-cols-[auto_minmax(0,1fr)_auto] items-center px-2 py-1.5', operation.operationId === selectedOperationId && activeItemClass]" :title="`${operation.method} ${operation.path} — ${operation.summary || operation.operationId}`" @click="emit('selectOperation', operation)">
+                  <MethodBadge :method="operation.method" />
+                  <span class="flex min-w-0 items-baseline gap-2 overflow-hidden">
+                    <strong class="truncate">{{ operation.summary || operation.operationId }}</strong>
+                    <small :class="['shrink truncate', mutedTextClass]">{{ operation.path }}</small>
+                  </span>
+                  <Plus :size="16" :class="['ml-auto shrink-0 hover:text-[var(--tapir-text-strong)]', mutedTextClass]" @click.stop="emit('addOperationRequest', operation)" />
+                </button>
+              </template>
             </div>
           </div>
         </div>

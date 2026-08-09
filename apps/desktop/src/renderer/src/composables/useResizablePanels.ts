@@ -21,7 +21,7 @@ export function useResizablePanels() {
 
     const onMove = (moveEvent: MouseEvent) => {
       const delta = moveEvent.clientX - startX;
-      leftWidth.value = clamp(startWidth + delta, 240, 440);
+      leftWidth.value = clamp(startWidth + delta, 240, Math.max(240, window.innerWidth - 266));
     };
 
     const onUp = () => {

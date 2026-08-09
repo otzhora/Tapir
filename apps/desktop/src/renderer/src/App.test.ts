@@ -83,6 +83,53 @@ describe("desktop renderer app", () => {
     });
   });
 
+  it("collapses and expands operation groups in the servers sidebar", async () => {
+    const wrapper = mountApp();
+    await settle();
+
+    const petsGroup = wrapper.findAll("button[aria-expanded]").find((button) => button.text().includes("Pets"));
+    expect(petsGroup).toBeDefined();
+    if (!petsGroup) return;
+    expect(petsGroup.element.parentElement?.textContent).toContain("List pets");
+    expect(petsGroup.element.parentElement?.textContent).toContain("Create pet");
+
+    await petsGroup.trigger("click");
+    expect(petsGroup.attributes("aria-expanded")).toBe("false");
+    expect(petsGroup.element.parentElement?.textContent).not.toContain("List pets");
+    expect(petsGroup.element.parentElement?.textContent).not.toContain("Create pet");
+
+    await petsGroup.trigger("click");
+    expect(petsGroup.attributes("aria-expanded")).toBe("true");
+    expect(petsGroup.element.parentElement?.textContent).toContain("List pets");
+  });
+
+  it("collapses and expands all operation groups at once", async () => {
+    vi.mocked(bridge.getInitialState).mockResolvedValue({
+      workspace,
+      servers: [{
+        ...serverWithDefinition,
+        definition: {
+          ...serverWithDefinition.definition!,
+          operations: [listPetsOperation, { ...createPetOperation, tags: ["Admin"] }]
+        }
+      }]
+    });
+    const wrapper = mountApp();
+    await settle();
+
+    expect(wrapper.findAll("button[aria-expanded='true']")).toHaveLength(2);
+    const collapseAll = wrapper.find("button[title='Collapse all schema sections']");
+    expect(collapseAll.text()).toBe("Collapse all");
+
+    await collapseAll.trigger("click");
+    expect(wrapper.findAll("button[aria-expanded='false']")).toHaveLength(2);
+    const expandAll = wrapper.find("button[title='Expand all schema sections']");
+    expect(expandAll.text()).toBe("Expand all");
+
+    await expandAll.trigger("click");
+    expect(wrapper.findAll("button[aria-expanded='true']")).toHaveLength(2);
+  });
+
   it("creates and previews a custom request from the UI", async () => {
     const wrapper = mountApp();
     await settle();
