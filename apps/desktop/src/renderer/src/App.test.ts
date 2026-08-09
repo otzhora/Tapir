@@ -113,13 +113,13 @@ describe("desktop renderer app", () => {
     await wrapper.findAll("button").find((button) => button.text().includes("Headers"))?.trigger("click");
     await settle();
 
-    expect(wrapper.text()).toContain("Required: API key in x-api-key header");
+    expect(wrapper.text()).toContain("Required authentication declared by this operation");
     await wrapper.find("input[type='password']").setValue("renderer-secret");
-    await wrapper.findAll("button").find((button) => button.text().includes("Save credential"))?.trigger("click");
+    await wrapper.findAll("button").find((button) => button.text() === "Save")?.trigger("click");
     await settle();
 
-    expect(bridge.saveApiKeyHeader).toHaveBeenCalledWith({ serverId: "server-1", headerName: "x-api-key", secretValue: "renderer-secret" });
-    expect(wrapper.text()).toContain("Credential configured for x-api-key");
+    expect(bridge.saveAuthentication).toHaveBeenCalledWith(expect.objectContaining({ serverId: "server-1", schemeKey: "ApiKeyAuth", type: "apiKey", parameterName: "x-api-key", location: "header", secretValue: "renderer-secret" }));
+    expect(wrapper.text()).toContain("Credential configured");
     expect(JSON.stringify(vi.mocked(bridge.previewOperation).mock.calls)).not.toContain("renderer-secret");
     await wrapper.findAll("button").find((button) => button.text().includes("Send"))?.trigger("click");
     await settle();
@@ -130,7 +130,7 @@ describe("desktop renderer app", () => {
     await settle();
     await restarted.findAll("button").find((button) => button.text().includes("Headers"))?.trigger("click");
     await settle();
-    expect(restarted.text()).toContain("Credential configured for x-api-key");
+    expect(restarted.text()).toContain("Credential configured");
     expect(JSON.stringify(await bridge.getInitialState())).not.toContain("renderer-secret");
   });
 
@@ -198,16 +198,20 @@ function createMockBridge(): MockTapirBridge {
   const state = {
     drafts: [] as RequestDraft[],
     history: [] as CallHistoryEntry[],
-    authentication: null as ServerWithDefinition["authentication"]
+    authentication: [] as ServerWithDefinition["authentication"]
   };
 
   const bridge = {
     getInitialState: vi.fn(async () => ({ workspace, servers: [{ ...serverWithDefinition, authentication: state.authentication }] })),
     addServer: vi.fn(),
     refreshServerSchema: vi.fn(),
-    saveApiKeyHeader: vi.fn(async (input) => {
-      state.authentication = { type: "apiKeyHeader", headerName: input.headerName, configured: true };
-      return state.authentication;
+    saveAuthentication: vi.fn(async (input) => {
+      const configuration = { schemeKey: input.schemeKey, type: input.type, parameterName: input.parameterName, location: input.location, username: input.username, configured: true as const };
+      state.authentication = [...state.authentication.filter((item) => item.schemeKey !== input.schemeKey), configuration];
+      return configuration;
+    }),
+    deleteAuthentication: vi.fn(async (input) => {
+      state.authentication = state.authentication.filter((item) => item.schemeKey !== input.schemeKey);
     }),
     saveServerVariables: vi.fn(async (input) => ({
       variables: input.variables.map((variable: { id?: string; key: string; value: string }, index: number) => ({
@@ -375,7 +379,7 @@ const serverWithDefinition: ServerWithDefinition = {
     operations: [listPetsOperation]
   },
   variables: [],
-  authentication: null
+  authentication: []
 };
 
 type MockTapirBridge = TapirBridge & Record<string, ReturnType<typeof vi.fn>>;

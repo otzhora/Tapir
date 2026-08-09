@@ -8,29 +8,23 @@ import type {
 export class SafeStorageAuthProfileRepository implements AuthProfileRepository {
   constructor(private inner: AuthProfileRepository) {}
 
-  async upsertApiKeyHeader(input: {
-    workspaceId: string;
-    serverInstanceId: string;
-    name: string;
-    headerName: string;
-    secretValue: string;
-  }): Promise<UserAuthProfile> {
-    return this.inner.upsertApiKeyHeader({
+  async upsert(input: Parameters<AuthProfileRepository["upsert"]>[0]): Promise<UserAuthProfile> {
+    return this.inner.upsert({
       ...input,
       secretValue: protectSecret(input.secretValue)
     });
   }
 
-  async getForServer(serverInstanceId: string): Promise<{ profile: UserAuthProfile; secret: SecretValue } | null> {
-    const result = await this.inner.getForServer(serverInstanceId);
-    if (!result) return null;
-    return {
+  async listForServer(serverInstanceId: string): Promise<Array<{ profile: UserAuthProfile; secret: SecretValue }>> {
+    const results = await this.inner.listForServer(serverInstanceId);
+    return results.map((result) => ({
       profile: result.profile,
-      secret: {
-        ...result.secret,
-        encryptedOrPlainValue: unprotectSecret(result.secret.encryptedOrPlainValue)
-      }
-    };
+      secret: { ...result.secret, encryptedOrPlainValue: unprotectSecret(result.secret.encryptedOrPlainValue) }
+    }));
+  }
+
+  async delete(serverInstanceId: string, schemeKey: string): Promise<void> {
+    await this.inner.delete(serverInstanceId, schemeKey);
   }
 }
 

@@ -26,8 +26,7 @@ describe("prepareOperationRequest", () => {
       values: { petId: "pet 1", include: "owner, visits", filter: "active,new", "x-trace-id": "trace-1", session: "abc 123" },
       body: "{\"name\":\"Momo\"}",
       contentType: "application/json",
-      apiKeyHeaderName: "x-api-key",
-      apiKeyValue: "secret"
+      authentications: [{ type: "apiKey", name: "x-api-key", in: "header", value: "secret" }]
     });
 
     expect(prepared.validationIssues).toEqual([]);
@@ -67,14 +66,49 @@ describe("prepareOperationRequest", () => {
     });
   });
 
+  it("injects and redacts query, cookie, bearer, and Basic credentials", () => {
+    const common = { ...operation, method: "GET" as const, path: "/secured", parameters: [] };
+    const apiKeys = prepareOperationRequest("https://api.example.test", {
+      operation: common,
+      values: {},
+      authentications: [
+        { type: "apiKey", name: "access_token", in: "query", value: "query-secret" },
+        { type: "apiKey", name: "session", in: "cookie", value: "cookie-secret" }
+      ]
+    });
+    expect(apiKeys.request).toMatchObject({
+      url: "https://api.example.test/secured?access_token=query-secret",
+      headers: { cookie: "session=cookie-secret" }
+    });
+    expect(apiKeys.redactedRequest).toMatchObject({
+      url: "https://api.example.test/secured?access_token=********",
+      headers: { cookie: "session=********" }
+    });
+
+    const bearer = prepareOperationRequest("https://api.example.test", {
+      operation: common,
+      values: {},
+      authentications: [{ type: "bearer", value: "bearer-secret" }]
+    });
+    expect(bearer.request.headers.authorization).toBe("Bearer bearer-secret");
+    expect(bearer.redactedRequest.headers.authorization).toBe("Bearer ********");
+
+    const basic = prepareOperationRequest("https://api.example.test", {
+      operation: common,
+      values: {},
+      authentications: [{ type: "basic", username: "momo", password: "basic-secret" }]
+    });
+    expect(basic.request.headers.authorization).toBe(`Basic ${Buffer.from("momo:basic-secret").toString("base64")}`);
+    expect(basic.redactedRequest.headers.authorization).toBe("Basic ********");
+  });
+
   it("resolves Postman-style server variables outside request bodies", () => {
     const prepared = prepareOperationRequest("https://{{host}}", {
       operation,
       values: { petId: "{{petId}}", include: "owner, {{include}}", "x-trace-id": "{{traceId}}" },
       body: "{\"name\":\"{{petName}}\"}",
       contentType: "application/json",
-      apiKeyHeaderName: "{{apiKeyHeader}}",
-      apiKeyValue: "{{apiKey}}",
+      authentications: [{ type: "apiKey", name: "{{apiKeyHeader}}", in: "header", value: "{{apiKey}}" }],
       variables: [
         serverVariable("host", "api.example.test"),
         serverVariable("petId", "pet 1"),

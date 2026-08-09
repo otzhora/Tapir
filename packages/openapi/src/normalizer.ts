@@ -84,9 +84,7 @@ function normalizeOperation(input: {
     requestBodyMediaTypes,
     responses: isRecord(input.operation.responses) ? resolveRefsInValue(input.document, input.operation.responses) : undefined,
     securityRequirements,
-    securitySchemes: securityRequirements.length > 0
-      ? input.securitySchemes.filter((scheme) => securityRequirements.some((requirement) => scheme.key in requirement))
-      : input.securitySchemes
+    securitySchemes: input.securitySchemes.filter((scheme) => securityRequirements.some((requirement) => scheme.key in requirement))
   };
 }
 

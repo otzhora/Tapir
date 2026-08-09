@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { AlertCircle, Clipboard, Database, Eye, FileJson2, Plus, Send, TerminalSquare, X } from "lucide-vue-next";
-import type { NormalizedOperation, PreparedOperationRequest, RequestDraft, RequestDraftHeader, RequestDraftParameter, ServerAuthenticationConfiguration, ServerWithDefinition } from "@tapir/core";
+import type { NormalizedOperation, PreparedOperationRequest, RequestDraft, RequestDraftHeader, RequestDraftParameter, SaveAuthenticationRequest, ServerAuthenticationConfiguration, ServerWithDefinition } from "@tapir/core";
 import type { RequestTab, RequestTabItem } from "../types";
 import { eyebrowClass, fieldClass, iconButtonClass, mutedTextClass, primaryActionClass, softTextClass, strongTextClass } from "../uiClasses";
 import JsonCodeEditor from "./JsonCodeEditor.vue";
@@ -11,7 +11,7 @@ type ValidationIssue = { field: string; message: string };
 
 const props = defineProps<{
   activeDraft: RequestDraft | null;
-  authentication: ServerAuthenticationConfiguration | null;
+  authentication: ServerAuthenticationConfiguration[];
   activeRequestTab: RequestTab;
   canSend: boolean;
   curlCommand: string;
@@ -42,7 +42,8 @@ const emit = defineEmits<{
   createDraft: [];
   removeHeader: [id: string];
   removeParameter: [id: string];
-  saveApiKey: [headerName: string, secretValue: string];
+  saveAuthentication: [input: Omit<SaveAuthenticationRequest, "serverId">];
+  deleteAuthentication: [schemeKey: string];
   selectDraft: [draftId: string];
   setParameter: [id: string, value: string];
   toggleHeader: [id: string, enabled: boolean];
@@ -59,10 +60,49 @@ const emit = defineEmits<{
 
 const methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 const credentialValue = ref("");
-const apiKeyScheme = computed(() => props.selectedOperation?.securitySchemes.find((scheme) => scheme.type === "apiKey" && scheme.in === "header") ?? null);
-const apiKeyRequired = computed(() => Boolean(apiKeyScheme.value && props.selectedOperation?.securityRequirements.some((requirement) => apiKeyScheme.value!.key in requirement)));
-const configuredForOperation = computed(() => Boolean(props.authentication && apiKeyScheme.value?.name && props.authentication.headerName.toLowerCase() === apiKeyScheme.value.name.toLowerCase()));
-watch(() => props.selectedServer?.server.id, () => { credentialValue.value = ""; });
+const basicUsername = ref("");
+const selectedSchemeKey = ref("");
+const supportedSchemes = computed(() => props.selectedOperation?.securitySchemes.filter((scheme) =>
+  (scheme.type === "apiKey" && Boolean(scheme.name && scheme.in))
+  || (scheme.type === "http" && ["bearer", "basic"].includes(scheme.scheme?.toLowerCase() ?? ""))
+) ?? []);
+const unsupportedSchemes = computed(() => props.selectedOperation?.securitySchemes.filter((scheme) => !supportedSchemes.value.some((supported) => supported.key === scheme.key)) ?? []);
+const selectedScheme = computed(() => supportedSchemes.value.find((scheme) => scheme.key === selectedSchemeKey.value) ?? supportedSchemes.value[0] ?? null);
+const configuredAuthentication = computed(() => props.authentication.find((item) => item.schemeKey === selectedScheme.value?.key)
+  ?? props.authentication.find((item) => item.type === "apiKey" && selectedScheme.value?.type === "apiKey"
+    && item.location === selectedScheme.value.in && item.parameterName?.toLowerCase() === selectedScheme.value.name?.toLowerCase())
+  ?? null);
+const authenticationOptional = computed(() => Boolean(props.selectedOperation?.securityRequirements.some((requirement) => Object.keys(requirement).length === 0)));
+watch([() => props.selectedServer?.server.id, () => props.selectedOperation?.operationId], () => {
+  credentialValue.value = "";
+  selectedSchemeKey.value = supportedSchemes.value[0]?.key ?? "";
+  basicUsername.value = configuredAuthentication.value?.username ?? "";
+}, { immediate: true });
+watch(selectedSchemeKey, () => {
+  basicUsername.value = configuredAuthentication.value?.username ?? "";
+  credentialValue.value = "";
+});
+
+function saveSelectedAuthentication(): void {
+  const scheme = selectedScheme.value;
+  if (!scheme || !credentialValue.value) return;
+  const httpScheme = scheme.scheme?.toLowerCase();
+  const type = scheme.type === "apiKey" ? "apiKey" : httpScheme === "basic" ? "basic" : "bearer";
+  emit("saveAuthentication", {
+    schemeKey: scheme.key,
+    type,
+    parameterName: scheme.name,
+    location: scheme.in,
+    username: type === "basic" ? basicUsername.value : undefined,
+    secretValue: credentialValue.value
+  });
+  credentialValue.value = "";
+}
+
+function schemeLabel(scheme: NormalizedOperation["securitySchemes"][number]): string {
+  if (scheme.type === "apiKey") return `${scheme.key} · API key in ${scheme.in}`;
+  return `${scheme.key} · HTTP ${scheme.scheme ?? "authentication"}`;
+}
 
 function inputValue(event: Event): string {
   return (event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value;
@@ -220,17 +260,25 @@ function isJsonMediaType(value: string): boolean {
               <div>
                 <strong :class="strongTextClass">Authentication</strong>
                 <p :class="['mt-1 text-[13px]', mutedTextClass]">
-                  <template v-if="apiKeyRequired && apiKeyScheme">Required: API key in <code>{{ apiKeyScheme.name }}</code> header.</template>
-                  <template v-else>No supported authentication is required by this operation.</template>
+                  <template v-if="supportedSchemes.length">{{ authenticationOptional ? "Optional" : "Required" }} authentication declared by this operation.</template>
+                  <template v-else>No supported authentication is declared by this operation.</template>
                 </p>
               </div>
-              <template v-if="apiKeyRequired && apiKeyScheme">
-                <div v-if="configuredForOperation && authentication" class="text-[13px] font-bold text-[var(--tapir-success)]">Credential configured for {{ authentication.headerName }}. The value stays in the main process.</div>
-                <div class="grid gap-2 md:grid-cols-[1fr_auto]">
-                  <input v-model="credentialValue" type="password" :class="fieldClass" :placeholder="configuredForOperation ? 'Replace configured credential' : 'API key'" autocomplete="new-password" />
-                  <button class="mini-button" :disabled="!credentialValue" @click="emit('saveApiKey', apiKeyScheme.name || '', credentialValue); credentialValue = ''">{{ configuredForOperation ? "Replace credential" : "Save credential" }}</button>
+              <template v-if="supportedSchemes.length">
+                <select v-model="selectedSchemeKey" :class="fieldClass">
+                  <option v-for="scheme in supportedSchemes" :key="scheme.key" :value="scheme.key">{{ schemeLabel(scheme) }}</option>
+                </select>
+                <div v-if="configuredAuthentication" class="flex items-center justify-between gap-3 text-[13px] font-bold text-[var(--tapir-success)]">
+                  <span>Credential configured. Its secret stays in the main process.</span>
+                  <button class="mini-button" type="button" @click="emit('deleteAuthentication', configuredAuthentication.schemeKey)">Remove</button>
+                </div>
+                <div class="grid gap-2" :class="selectedScheme?.scheme?.toLowerCase() === 'basic' ? 'md:grid-cols-[1fr_1fr_auto]' : 'md:grid-cols-[1fr_auto]'">
+                  <input v-if="selectedScheme?.scheme?.toLowerCase() === 'basic'" v-model="basicUsername" :class="fieldClass" placeholder="Username" autocomplete="username" />
+                  <input v-model="credentialValue" type="password" :class="fieldClass" :placeholder="configuredAuthentication ? 'Replace configured credential' : 'Credential value'" autocomplete="new-password" />
+                  <button class="mini-button" :disabled="!credentialValue || (selectedScheme?.scheme?.toLowerCase() === 'basic' && !basicUsername)" @click="saveSelectedAuthentication">{{ configuredAuthentication ? "Replace" : "Save" }}</button>
                 </div>
               </template>
+              <p v-if="unsupportedSchemes.length" class="m-0 text-[12px] text-[var(--tapir-warning)]">Unsupported: {{ unsupportedSchemes.map((scheme) => scheme.key).join(", ") }}.</p>
             </div>
             <div class="flex justify-end">
               <button class="mini-button" @click="emit('addHeader')"><Plus :size="15" /> Header</button>

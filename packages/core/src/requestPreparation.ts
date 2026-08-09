@@ -14,10 +14,14 @@ export interface PrepareOperationRequestInput {
   values: Record<string, string>;
   body?: string;
   contentType?: string;
-  apiKeyHeaderName?: string;
-  apiKeyValue?: string;
+  authentications?: PreparedAuthentication[];
   variables?: ServerVariable[];
 }
+
+export type PreparedAuthentication =
+  | { type: "apiKey"; name: string; in: "query" | "header" | "cookie"; value: string }
+  | { type: "bearer"; value: string }
+  | { type: "basic"; username: string; password: string };
 
 export function prepareOperationRequest(baseUrl: string, input: PrepareOperationRequestInput): PreparedOperationRequest {
   const validationIssues: PreparedRequestValidationIssue[] = [];
@@ -61,12 +65,8 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
       }
       return serializeCookieValues(parameter, value);
     });
+  applyAuthentications(url, headers, cookieValues, input.authentications ?? [], resolve);
   if (cookieValues.length > 0) headers.cookie = cookieValues.join("; ");
-  const apiKeyHeaderName = input.apiKeyHeaderName ? resolve(input.apiKeyHeaderName.trim(), "apiKeyHeaderName") : undefined;
-  const apiKeyValue = resolve(input.apiKeyValue ?? "", "apiKeyValue");
-  if (apiKeyHeaderName && apiKeyValue) {
-    headers[apiKeyHeaderName] = apiKeyValue;
-  }
 
   const body = input.operation.method === "GET" || input.operation.method === "HEAD" ? undefined : input.body;
   const contentType = input.contentType?.trim() || input.operation.requestBodyMediaTypes?.[0]?.mediaType || "application/json";
@@ -85,7 +85,7 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
   };
   return {
     request,
-    redactedRequest: redactRequest(request, apiKeyHeaderName),
+    redactedRequest: redactRequest(request, input.authentications ?? [], resolve),
     validationIssues
   };
 }
@@ -245,10 +245,64 @@ function validateJsonBody(body: string, validationIssues: PreparedRequestValidat
   }
 }
 
-function redactRequest(request: PreparedRequest, secretHeaderName?: string): PreparedRequest {
-  if (!secretHeaderName || !(secretHeaderName in request.headers)) return request;
-  return {
-    ...request,
-    headers: { ...request.headers, [secretHeaderName]: "********" }
-  };
+function applyAuthentications(
+  url: URL,
+  headers: Record<string, string>,
+  cookies: string[],
+  authentications: PreparedAuthentication[],
+  resolve: (value: string, field: string) => string
+): void {
+  for (const authentication of authentications) {
+    if (authentication.type === "apiKey") {
+      const name = resolve(authentication.name, "authentication");
+      const value = resolve(authentication.value, "authentication");
+      if (!name || !value) continue;
+      if (authentication.in === "query") url.searchParams.append(name, value);
+      if (authentication.in === "header") headers[name] = value;
+      if (authentication.in === "cookie") cookies.push(`${encodeURIComponent(name)}=${encodeURIComponent(value)}`);
+    }
+    if (authentication.type === "bearer") {
+      const value = resolve(authentication.value, "authentication");
+      if (value) headers.authorization = `Bearer ${value}`;
+    }
+    if (authentication.type === "basic") {
+      const username = resolve(authentication.username, "authentication");
+      const password = resolve(authentication.password, "authentication");
+      if (username || password) headers.authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
+    }
+  }
+}
+
+function redactRequest(
+  request: PreparedRequest,
+  authentications: PreparedAuthentication[],
+  resolve: (value: string, field: string) => string
+): PreparedRequest {
+  if (authentications.length === 0) return request;
+  const redactedUrl = new URL(request.url);
+  const headers = { ...request.headers };
+  for (const authentication of authentications) {
+    const authenticationName = authentication.type === "apiKey" ? resolve(authentication.name, "authentication") : "";
+    if (authentication.type === "apiKey" && authentication.in === "query") {
+      if (redactedUrl.searchParams.has(authenticationName)) redactedUrl.searchParams.set(authenticationName, "********");
+    }
+    if (authentication.type === "apiKey" && authentication.in === "header" && authenticationName in headers) {
+      headers[authenticationName] = "********";
+    }
+    if (authentication.type === "apiKey" && authentication.in === "cookie" && headers.cookie) {
+      headers.cookie = redactCookie(headers.cookie, authenticationName);
+    }
+    if ((authentication.type === "bearer" || authentication.type === "basic") && headers.authorization) {
+      headers.authorization = `${authentication.type === "bearer" ? "Bearer" : "Basic"} ********`;
+    }
+  }
+  return { ...request, url: redactedUrl.toString(), headers };
+}
+
+function redactCookie(value: string, name: string): string {
+  const encodedName = encodeURIComponent(name);
+  return value.split(";").map((part) => {
+    const trimmed = part.trim();
+    return trimmed.startsWith(`${encodedName}=`) ? `${encodedName}=********` : trimmed;
+  }).join("; ");
 }

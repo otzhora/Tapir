@@ -11,7 +11,8 @@ import type {
   PreviewOperationResponse,
   RefreshServerSchemaRequest,
   RefreshServerSchemaResponse,
-  SaveApiKeyHeaderRequest,
+  DeleteAuthenticationRequest,
+  SaveAuthenticationRequest,
   ServerAuthenticationConfiguration,
   SaveServerVariablesRequest,
   SaveServerVariablesResponse,
@@ -33,7 +34,7 @@ import type {
   AuthProfileRepository,
   Workspace
 } from "./index";
-import { prepareCustomRequest, prepareOperationRequest } from "./requestPreparation.js";
+import { prepareCustomRequest, prepareOperationRequest, type PreparedAuthentication } from "./requestPreparation.js";
 import { normalizeServerBaseUrl } from "./urlNormalization.js";
 
 export interface TapirApplicationDependencies {
@@ -58,12 +59,12 @@ export class TapirApplicationService {
     const enriched = await Promise.all(serverInstances.map(async (server) => {
       const definition = await definitions.latestForServer(server.id);
       const variables = await serverVariables.listForServer(server.id);
-      const auth = await authProfiles.getForServer(server.id);
+      const auth = await authProfiles.listForServer(server.id);
       return {
         server,
         definition: definition ? JSON.parse(definition.normalizedJson) as NormalizedApiDefinition : null,
         variables,
-        authentication: auth ? authenticationConfiguration(auth.profile.configJson) : null
+        authentication: auth.map((stored) => authenticationConfiguration(stored.profile))
       };
     }));
     return { workspace, servers: enriched };
@@ -146,20 +147,33 @@ export class TapirApplicationService {
     return { server: refreshedServer, normalized, deprecatedDrafts };
   }
 
-  async saveApiKeyHeader(input: SaveApiKeyHeaderRequest): Promise<ServerAuthenticationConfiguration> {
+  async saveAuthentication(input: SaveAuthenticationRequest): Promise<ServerAuthenticationConfiguration> {
     const { authProfiles, workspace } = this.dependencies;
     await this.requireWorkspaceServer(input.serverId);
-    const headerName = input.headerName.trim();
-    if (!headerName) throw new Error("API key header name is required.");
-    if (!input.secretValue) throw new Error("API key value is required.");
-    const profile = await authProfiles.upsertApiKeyHeader({
+    const schemeKey = input.schemeKey.trim();
+    if (!schemeKey) throw new Error("Authentication scheme key is required.");
+    if (!input.secretValue) throw new Error("Credential value is required.");
+    if (input.type === "apiKey" && (!input.parameterName?.trim() || !input.location)) {
+      throw new Error("API key name and location are required.");
+    }
+    if (input.type === "basic" && !input.username?.trim()) throw new Error("Basic authentication username is required.");
+    const profile = await authProfiles.upsert({
       workspaceId: workspace.id,
       serverInstanceId: input.serverId,
-      name: headerName,
-      headerName,
+      schemeKey,
+      type: input.type,
+      name: schemeKey,
+      parameterName: input.parameterName?.trim(),
+      location: input.location,
+      username: input.username?.trim(),
       secretValue: input.secretValue
     });
-    return authenticationConfiguration(profile.configJson);
+    return authenticationConfiguration(profile);
+  }
+
+  async deleteAuthentication(input: DeleteAuthenticationRequest): Promise<void> {
+    await this.requireWorkspaceServer(input.serverId);
+    await this.dependencies.authProfiles.delete(input.serverId, input.schemeKey);
   }
 
   async saveServerVariables(input: SaveServerVariablesRequest): Promise<SaveServerVariablesResponse> {
@@ -181,7 +195,7 @@ export class TapirApplicationService {
     if (!server) throw new Error("Server not found.");
 
     const variables = await serverVariables.listForServer(server.id);
-    const prepared = prepareOperationRequest(server.baseUrl, { ...input, variables, ...await this.operationAuthentication(server.id, input.operation) });
+    const prepared = prepareOperationRequest(server.baseUrl, { ...input, variables, authentications: await this.operationAuthentications(server.id, input.operation) });
     if (prepared.validationIssues.length > 0) {
       throw new Error(prepared.validationIssues.map((issue) => issue.message).join(" "));
     }
@@ -208,7 +222,7 @@ export class TapirApplicationService {
     const server = serverInstances.find((candidate) => candidate.id === input.serverId);
     if (!server) throw new Error("Server not found.");
     const variables = await serverVariables.listForServer(server.id);
-    const prepared = prepareOperationRequest(server.baseUrl, { ...input, variables, ...await this.operationAuthentication(server.id, input.operation) });
+    const prepared = prepareOperationRequest(server.baseUrl, { ...input, variables, authentications: await this.operationAuthentications(server.id, input.operation) });
     return { ...prepared, request: prepared.redactedRequest };
   }
 
@@ -310,15 +324,21 @@ export class TapirApplicationService {
     return draft;
   }
 
-  private async operationAuthentication(serverId: string, operation: NormalizedOperation) {
-    const supported = operation.securitySchemes.find((scheme) => scheme.type === "apiKey" && scheme.in === "header");
-    const required = supported && operation.securityRequirements.some((requirement) => supported.key in requirement);
-    if (!supported || !required) return {};
-    const stored = await this.dependencies.authProfiles.getForServer(serverId);
-    if (!stored) return {};
-    const configuration = authenticationConfiguration(stored.profile.configJson);
-    if (configuration.headerName.toLowerCase() !== supported.name?.toLowerCase()) return {};
-    return { apiKeyHeaderName: configuration.headerName, apiKeyValue: stored.secret.encryptedOrPlainValue };
+  private async operationAuthentications(serverId: string, operation: NormalizedOperation): Promise<PreparedAuthentication[]> {
+    if (operation.securityRequirements.length === 0) return [];
+    const stored = await this.dependencies.authProfiles.listForServer(serverId);
+    const requirements = operation.securityRequirements.filter((requirement) => Object.keys(requirement).length > 0);
+    for (const requirement of requirements) {
+      const resolved = Object.keys(requirement).map((schemeKey) => {
+        const scheme = operation.securitySchemes.find((candidate) => candidate.key === schemeKey);
+        if (!scheme) return null;
+        const credential = stored.find((candidate) => authenticationMatches(candidate.profile, scheme));
+        if (!credential) return null;
+        return preparedAuthentication(scheme, credential.profile, credential.secret.encryptedOrPlainValue);
+      });
+      if (resolved.every((authentication): authentication is PreparedAuthentication => authentication !== null)) return resolved;
+    }
+    return [];
   }
 
   private async deprecateChangedOpenApiDrafts(
@@ -358,10 +378,47 @@ export class TapirApplicationService {
   }
 }
 
-function authenticationConfiguration(configJson: string): ServerAuthenticationConfiguration {
-  const parsed = JSON.parse(configJson) as { headerName?: unknown };
-  if (typeof parsed.headerName !== "string" || !parsed.headerName.trim()) throw new Error("Saved API key header configuration is invalid.");
-  return { type: "apiKeyHeader", headerName: parsed.headerName, configured: true };
+function authenticationConfiguration(profile: { type: string; configJson: string }): ServerAuthenticationConfiguration {
+  const parsed = JSON.parse(profile.configJson) as Record<string, unknown>;
+  if (profile.type === "apiKeyHeader") {
+    if (typeof parsed.headerName !== "string" || !parsed.headerName.trim()) throw new Error("Saved API key header configuration is invalid.");
+    return { schemeKey: `legacy:header:${parsed.headerName.toLowerCase()}`, type: "apiKey", parameterName: parsed.headerName, location: "header", configured: true };
+  }
+  if (typeof parsed.schemeKey !== "string" || !parsed.schemeKey.trim()) throw new Error("Saved authentication configuration is invalid.");
+  if (profile.type === "apiKey") {
+    if (typeof parsed.parameterName !== "string" || !["query", "header", "cookie"].includes(String(parsed.location))) {
+      throw new Error("Saved API key configuration is invalid.");
+    }
+    return { schemeKey: parsed.schemeKey, type: "apiKey", parameterName: parsed.parameterName, location: parsed.location as "query" | "header" | "cookie", configured: true };
+  }
+  if (profile.type === "bearer") return { schemeKey: parsed.schemeKey, type: "bearer", configured: true };
+  if (profile.type === "basic" && typeof parsed.username === "string") {
+    return { schemeKey: parsed.schemeKey, type: "basic", username: parsed.username, configured: true };
+  }
+  throw new Error("Saved authentication configuration is invalid.");
+}
+
+function authenticationMatches(profile: { type: string; configJson: string }, scheme: NormalizedOperation["securitySchemes"][number]): boolean {
+  const configuration = authenticationConfiguration(profile);
+  if (configuration.schemeKey === scheme.key) return true;
+  return profile.type === "apiKeyHeader" && scheme.type === "apiKey" && scheme.in === "header"
+    && configuration.parameterName?.toLowerCase() === scheme.name?.toLowerCase();
+}
+
+function preparedAuthentication(
+  scheme: NormalizedOperation["securitySchemes"][number],
+  profile: { type: string; configJson: string },
+  secretValue: string
+): PreparedAuthentication | null {
+  const configuration = authenticationConfiguration(profile);
+  if (scheme.type === "apiKey" && scheme.name && scheme.in) {
+    return { type: "apiKey", name: scheme.name, in: scheme.in, value: secretValue };
+  }
+  if (scheme.type === "http" && scheme.scheme?.toLowerCase() === "bearer") return { type: "bearer", value: secretValue };
+  if (scheme.type === "http" && scheme.scheme?.toLowerCase() === "basic" && configuration.type === "basic") {
+    return { type: "basic", username: configuration.username ?? "", password: secretValue };
+  }
+  return null;
 }
 
 function customUrlFromDraft(baseUrl: string, draft: RequestDraft): string {

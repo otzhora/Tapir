@@ -51,7 +51,7 @@ Remaining advanced serialization cases, including object parameters, `deepObject
 
 ## Phase 2 — Authentication
 
-Status: `Planned` — next phase.
+Status: `Completed` on 2026-08-09.
 
 Goal: support the authentication mechanisms commonly declared by real OpenAPI documents while keeping secret values out of the renderer, previews, history, and logs.
 
@@ -74,6 +74,16 @@ Acceptance criteria:
 - Optional authentication works both configured and unconfigured.
 - Existing databases migrate without losing header API keys.
 - Fixture or integration tests exercise at least API-key and bearer flows.
+
+Completion evidence:
+
+- Scheme-keyed encrypted profiles support multiple credentials per server.
+- Header, query, and cookie API keys plus bearer and Basic authentication are injected and redacted.
+- Optional, alternative, and combined security requirements have service-level coverage.
+- Credentials can be replaced and removed from the request UI.
+- Legacy `apiKeyHeader` rows load without rewriting or losing encrypted values.
+- Node and .NET fixtures validate both API-key and bearer endpoints.
+- Typechecking, 40 tests, fixture smoke tests, and the production build pass.
 
 ## Phase 3 — Server lifecycle management
 
@@ -211,5 +221,5 @@ Acceptance criteria:
 
 - Created this tracked plan.
 - Recorded Phase 1 as completed.
-- Set Phase 2 authentication as the next implementation phase.
-
+- Committed Phase 1 as `dc7b8aa` (`Fix OpenAPI parameter serialization`).
+- Completed Phase 2 authentication; commit recorded after verification.

@@ -16,12 +16,15 @@ export interface ServerWithDefinition {
   server: ServerInstance;
   definition: NormalizedApiDefinition | null;
   variables: ServerVariable[];
-  authentication: ServerAuthenticationConfiguration | null;
+  authentication: ServerAuthenticationConfiguration[];
 }
 
 export interface ServerAuthenticationConfiguration {
-  type: "apiKeyHeader";
-  headerName: string;
+  schemeKey: string;
+  type: "apiKey" | "bearer" | "basic";
+  parameterName?: string;
+  location?: "query" | "header" | "cookie";
+  username?: string;
   configured: true;
 }
 
@@ -49,10 +52,19 @@ export interface RefreshServerSchemaResponse {
   deprecatedDrafts: RequestDraft[];
 }
 
-export interface SaveApiKeyHeaderRequest {
+export interface SaveAuthenticationRequest {
   serverId: string;
-  headerName: string;
+  schemeKey: string;
+  type: "apiKey" | "bearer" | "basic";
+  parameterName?: string;
+  location?: "query" | "header" | "cookie";
+  username?: string;
   secretValue: string;
+}
+
+export interface DeleteAuthenticationRequest {
+  serverId: string;
+  schemeKey: string;
 }
 
 export interface SaveServerVariablesRequest {
@@ -144,9 +156,13 @@ export interface TapirIpcContract {
     request: RefreshServerSchemaRequest;
     response: RefreshServerSchemaResponse;
   };
-  "tapir:saveApiKeyHeader": {
-    request: SaveApiKeyHeaderRequest;
+  "tapir:saveAuthentication": {
+    request: SaveAuthenticationRequest;
     response: ServerAuthenticationConfiguration;
+  };
+  "tapir:deleteAuthentication": {
+    request: DeleteAuthenticationRequest;
+    response: void;
   };
   "tapir:saveServerVariables": {
     request: SaveServerVariablesRequest;

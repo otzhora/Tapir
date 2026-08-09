@@ -75,11 +75,14 @@ describe("SQLite storage", () => {
       normalizedJson: JSON.stringify({ name: "Example API", version: "1.0.0", operations: [] }),
       fetchedAt: "2026-06-29T00:00:00.000Z"
     });
-    await authProfiles.upsertApiKeyHeader({
+    await authProfiles.upsert({
       workspaceId: workspace.id,
       serverInstanceId: server.id,
+      schemeKey: "ApiKeyAuth",
+      type: "apiKey",
       name: "x-api-key",
-      headerName: "x-api-key",
+      parameterName: "x-api-key",
+      location: "header",
       secretValue: "secret"
     });
     await serverVariables.replaceForServer({
@@ -104,10 +107,9 @@ describe("SQLite storage", () => {
     await expect(serverVariables.listForServer(server.id)).resolves.toMatchObject([
       { key: "baseUrl", value: "https://api.example.test" }
     ]);
-    await expect(authProfiles.getForServer(server.id)).resolves.toMatchObject({
-      profile: { configJson: JSON.stringify({ headerName: "x-api-key" }) },
-      secret: { encryptedOrPlainValue: "secret" }
-    });
+    await expect(authProfiles.listForServer(server.id)).resolves.toMatchObject([{
+      profile: { type: "apiKey" }, secret: { encryptedOrPlainValue: "secret" }
+    }]);
     await expect(history.listForServer(server.id)).resolves.toMatchObject([
       { operationId: "listPets", responseStatus: 200, durationMs: 42 }
     ]);
@@ -135,6 +137,33 @@ describe("SQLite storage", () => {
         { key: "TOKEN", value: "second" }
       ]
     })).rejects.toThrow("Variable TOKEN is already defined for this server.");
+  });
+
+  it("loads legacy header API-key profiles without rewriting or losing their secrets", async () => {
+    const database = await createDatabase();
+    const workspace = ensureDefaultWorkspace(database);
+    const server = await new SqliteServerRepository(database).create({
+      id: "server-legacy",
+      workspaceId: workspace.id,
+      name: "Legacy API",
+      baseUrl: "https://legacy.example.test",
+      specUrl: "https://legacy.example.test/openapi.json",
+      apiDefinitionSourceId: null
+    });
+    const now = "2026-07-01T00:00:00.000Z";
+    database.prepare(`
+      insert into user_auth_profiles (id, workspace_id, server_instance_id, name, type, config_json, secret_ref, created_at, updated_at)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("legacy-profile", workspace.id, server.id, "x-api-key", "apiKeyHeader", JSON.stringify({ headerName: "x-api-key" }), "legacy-secret", now, now);
+    database.prepare(`
+      insert into secret_values (id, auth_profile_id, encrypted_or_plain_value, created_at, updated_at)
+      values (?, ?, ?, ?, ?)
+    `).run("legacy-secret", "legacy-profile", "safeStorage:v1:legacy-value", now, now);
+
+    await expect(new SqliteAuthProfileRepository(database).listForServer(server.id)).resolves.toMatchObject([{
+      profile: { type: "apiKeyHeader", configJson: JSON.stringify({ headerName: "x-api-key" }) },
+      secret: { encryptedOrPlainValue: "safeStorage:v1:legacy-value" }
+    }]);
   });
 });
 

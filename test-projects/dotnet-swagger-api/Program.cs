@@ -5,6 +5,7 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 var fixtureApiKey = builder.Configuration["TAPIR_FIXTURE_API_KEY"] ?? "tapir-dotnet-secret";
+var fixtureBearerToken = builder.Configuration["TAPIR_FIXTURE_BEARER_TOKEN"] ?? "tapir-dotnet-token";
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -103,6 +104,19 @@ app.MapGet("/auth/api-key", ([FromHeader(Name = "x-api-key")] string? apiKey) =>
     .WithTags("System")
     .WithSummary("Verify an API key")
     .WithDescription("Requires the x-api-key header. The local fixture accepts tapir-dotnet-secret by default.")
+    .Produces<AuthenticatedIdentity>()
+    .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
+
+app.MapGet("/auth/bearer", ([FromHeader(Name = "Authorization")] string? authorization) =>
+        authorization == $"Bearer {fixtureBearerToken}"
+            ? Results.Ok(new AuthenticatedIdentity(true, "bearer"))
+            : Results.Json(
+                new ProblemDetails { Title = "Unauthorized", Detail = "Provide the fixture bearer token in the Authorization header.", Status = StatusCodes.Status401Unauthorized },
+                statusCode: StatusCodes.Status401Unauthorized))
+    .WithName("GetBearerIdentity")
+    .WithTags("System")
+    .WithSummary("Verify a bearer token")
+    .WithDescription("Requires an HTTP bearer token. The local fixture accepts tapir-dotnet-token by default.")
     .Produces<AuthenticatedIdentity>()
     .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
 
@@ -270,12 +284,18 @@ public sealed class ApiKeyOperationFilter : Swashbuckle.AspNetCore.SwaggerGen.IO
 {
     public void Apply(OpenApiOperation operation, Swashbuckle.AspNetCore.SwaggerGen.OperationFilterContext context)
     {
-        if (operation.OperationId != "GetApiKeyIdentity") return;
+        var schemeId = operation.OperationId switch
+        {
+            "GetApiKeyIdentity" => "ApiKey",
+            "GetBearerIdentity" => "Bearer",
+            _ => null
+        };
+        if (schemeId is null) return;
         operation.Security = new List<OpenApiSecurityRequirement>
         {
             new()
             {
-                [new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "ApiKey" } }] = Array.Empty<string>()
+                [new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = schemeId } }] = Array.Empty<string>()
             }
         };
     }

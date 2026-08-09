@@ -21,14 +21,14 @@ try {
     waitFor(`http://127.0.0.1:${dotnetPort}/health`, children[1])
   ]);
 
-  await verifyFixture("Node", `http://127.0.0.1:${nodePort}`, "/openapi.json", "ApiKeyAuth", "tapir-node-secret");
-  await verifyFixture(".NET", `http://127.0.0.1:${dotnetPort}`, "/swagger/v1/swagger.json", "ApiKey", "tapir-dotnet-secret");
+  await verifyFixture("Node", `http://127.0.0.1:${nodePort}`, "/openapi.json", "ApiKeyAuth", "tapir-node-secret", "BearerAuth", "tapir-node-token");
+  await verifyFixture(".NET", `http://127.0.0.1:${dotnetPort}`, "/swagger/v1/swagger.json", "ApiKey", "tapir-dotnet-secret", "Bearer", "tapir-dotnet-token");
   console.log("Fixture authentication smoke tests passed.");
 } finally {
   for (const child of children) stop(child);
 }
 
-async function verifyFixture(name, baseUrl, specPath, schemeName, apiKey) {
+async function verifyFixture(name, baseUrl, specPath, schemeName, apiKey, bearerSchemeName, bearerToken) {
   const specResponse = await fetch(`${baseUrl}${specPath}`);
   assert(specResponse.ok, `${name} OpenAPI document returned ${specResponse.status}.`);
   const spec = await specResponse.json();
@@ -46,6 +46,17 @@ async function verifyFixture(name, baseUrl, specPath, schemeName, apiKey) {
   assert(accepted.status === 200, `${name} valid credential returned ${accepted.status}, expected 200.`);
   const payload = await accepted.json();
   assert(payload.authenticated === true && payload.scheme === "apiKey", `${name} authenticated response is incorrect.`);
+
+  const bearerOperation = spec.paths?.["/auth/bearer"]?.get;
+  const bearerScheme = spec.components?.securitySchemes?.[bearerSchemeName];
+  assert(bearerScheme?.type === "http" && bearerScheme.scheme?.toLowerCase() === "bearer", `${name} bearer scheme is missing.`);
+  assert(bearerOperation?.security?.some((requirement) => bearerSchemeName in requirement), `${name} bearer operation does not require the bearer scheme.`);
+  const missingBearer = await fetch(`${baseUrl}/auth/bearer`);
+  assert(missingBearer.status === 401, `${name} missing bearer credential returned ${missingBearer.status}, expected 401.`);
+  const acceptedBearer = await fetch(`${baseUrl}/auth/bearer`, { headers: { authorization: `Bearer ${bearerToken}` } });
+  assert(acceptedBearer.status === 200, `${name} valid bearer credential returned ${acceptedBearer.status}, expected 200.`);
+  const bearerPayload = await acceptedBearer.json();
+  assert(bearerPayload.authenticated === true && bearerPayload.scheme === "bearer", `${name} bearer response is incorrect.`);
 }
 
 function start(command, args, cwd, env) {

@@ -9,6 +9,7 @@ import type {
   HttpExecutor,
   OpenApiDiscoveryService,
   OpenApiNormalizer,
+  NormalizedOperation,
   RequestDraft,
   RequestDraftRepository,
   PreparedRequest,
@@ -43,7 +44,7 @@ describe("TapirApplicationService", () => {
       securityRequirements: [{ ApiKeyAuth: [] }], securitySchemes: [{ key: "ApiKeyAuth", type: "apiKey", name: "x-api-key", in: "header" as const }]
     };
 
-    await expect(service.saveApiKeyHeader({ serverId: "server-1", headerName: "x-api-key", secretValue: "top-secret" })).resolves.toEqual({ type: "apiKeyHeader", headerName: "x-api-key", configured: true });
+    await expect(service.saveAuthentication({ serverId: "server-1", schemeKey: "ApiKeyAuth", type: "apiKey", parameterName: "x-api-key", location: "header", secretValue: "top-secret" })).resolves.toEqual({ schemeKey: "ApiKeyAuth", type: "apiKey", parameterName: "x-api-key", location: "header", configured: true });
     const preview = await service.previewOperation({ serverId: "server-1", operation, values: {} });
     expect(preview.request.headers["x-api-key"]).toBe("********");
     expect(preview.redactedRequest.headers["x-api-key"]).toBe("********");
@@ -57,8 +58,41 @@ describe("TapirApplicationService", () => {
 
     const restarted = new TapirApplicationService(dependencies);
     const initial = await restarted.getInitialState();
-    expect(initial.servers[0]?.authentication).toEqual({ type: "apiKeyHeader", headerName: "x-api-key", configured: true });
+    expect(initial.servers[0]?.authentication).toEqual([{ schemeKey: "ApiKeyAuth", type: "apiKey", parameterName: "x-api-key", location: "header", configured: true }]);
     expect(JSON.stringify(initial)).not.toContain("top-secret");
+
+    const bearerOperation: NormalizedOperation = {
+      operationId: "optionalBearer", method: "GET" as const, path: "/optional", tags: [], parameters: [], requestBodyMediaTypes: [],
+      securityRequirements: [{}, { BearerAuth: [] }], securitySchemes: [{ key: "BearerAuth", type: "http", scheme: "bearer" }]
+    };
+    await expect(service.previewOperation({ serverId: "server-1", operation: bearerOperation, values: {} })).resolves.toMatchObject({
+      request: { headers: {} }
+    });
+    await service.saveAuthentication({ serverId: "server-1", schemeKey: "BearerAuth", type: "bearer", secretValue: "bearer-secret" });
+    const bearerPreview = await service.previewOperation({ serverId: "server-1", operation: bearerOperation, values: {} });
+    expect(bearerPreview.request.headers.authorization).toBe("Bearer ********");
+    await service.callOperation({ serverId: "server-1", operation: bearerOperation, values: {} });
+    expect(executed.at(-1)?.headers.authorization).toBe("Bearer bearer-secret");
+
+    const basicOperation: NormalizedOperation = {
+      operationId: "combined", method: "GET" as const, path: "/combined", tags: [], parameters: [], requestBodyMediaTypes: [],
+      securityRequirements: [{ ApiKeyAuth: [], BasicAuth: [] }],
+      securitySchemes: [
+        { key: "ApiKeyAuth", type: "apiKey", name: "x-api-key", in: "header" as const },
+        { key: "BasicAuth", type: "http", scheme: "basic" }
+      ]
+    };
+    await service.saveAuthentication({ serverId: "server-1", schemeKey: "BasicAuth", type: "basic", username: "momo", secretValue: "basic-secret" });
+    await service.callOperation({ serverId: "server-1", operation: basicOperation, values: {} });
+    expect(executed.at(-1)?.headers).toMatchObject({
+      "x-api-key": "top-secret",
+      authorization: `Basic ${Buffer.from("momo:basic-secret").toString("base64")}`
+    });
+
+    await service.deleteAuthentication({ serverId: "server-1", schemeKey: "BearerAuth" });
+    expect((await service.getInitialState()).servers[0]?.authentication).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ schemeKey: "BearerAuth" })
+    ]));
   });
   it("returns a narrow JSON-safe add-server response", async () => {
     const workspace: Workspace = {
@@ -279,16 +313,20 @@ describe("TapirApplicationService", () => {
 });
 
 class MemoryAuthProfileRepository implements AuthProfileRepository {
-  private stored: { profile: UserAuthProfile; secret: SecretValue } | null = null;
-  async upsertApiKeyHeader(input: { workspaceId: string; serverInstanceId: string; name: string; headerName: string; secretValue: string }) {
+  private stored: Array<{ profile: UserAuthProfile; secret: SecretValue }> = [];
+  async upsert(input: Parameters<AuthProfileRepository["upsert"]>[0]) {
     const now = "2026-07-01T00:00:00.000Z";
-    this.stored = {
-      profile: { id: "auth-1", workspaceId: input.workspaceId, serverInstanceId: input.serverInstanceId, name: input.name, type: "apiKeyHeader", configJson: JSON.stringify({ headerName: input.headerName }), secretRef: "secret-1", createdAt: now, updatedAt: now },
+    const stored = {
+      profile: { id: `auth-${input.schemeKey}`, workspaceId: input.workspaceId, serverInstanceId: input.serverInstanceId, name: input.name, type: input.type, configJson: JSON.stringify({ schemeKey: input.schemeKey, parameterName: input.parameterName, location: input.location, username: input.username }), secretRef: `secret-${input.schemeKey}`, createdAt: now, updatedAt: now },
       secret: { id: "secret-1", authProfileId: "auth-1", encryptedOrPlainValue: input.secretValue, createdAt: now, updatedAt: now }
     };
-    return this.stored.profile;
+    this.stored = [...this.stored.filter((item) => item.profile.name !== input.schemeKey), stored];
+    return stored.profile;
   }
-  async getForServer(serverInstanceId: string) { return this.stored?.profile.serverInstanceId === serverInstanceId ? this.stored : null; }
+  async listForServer(serverInstanceId: string) { return this.stored.filter((item) => item.profile.serverInstanceId === serverInstanceId); }
+  async delete(serverInstanceId: string, schemeKey: string) {
+    this.stored = this.stored.filter((item) => item.profile.serverInstanceId !== serverInstanceId || item.profile.name !== schemeKey);
+  }
 }
 
 function testWorkspace(): Workspace {
@@ -390,12 +428,11 @@ function fixedNormalizer(): OpenApiNormalizer {
 
 function unusedAuthProfiles(): AuthProfileRepository {
   return {
-    async upsertApiKeyHeader() {
+    async upsert() {
       throw new Error("Not used.");
     },
-    async getForServer() {
-      return null;
-    }
+    async listForServer() { return []; },
+    async delete() {}
   };
 }
 

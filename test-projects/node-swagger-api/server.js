@@ -2,6 +2,7 @@ import http from "node:http";
 
 const port = Number.parseInt(process.env.PORT ?? "5051", 10);
 const fixtureApiKey = process.env.TAPIR_FIXTURE_API_KEY ?? "tapir-node-secret";
+const fixtureBearerToken = process.env.TAPIR_FIXTURE_BEARER_TOKEN ?? "tapir-node-token";
 
 const animals = [
   {
@@ -135,6 +136,22 @@ const openApiDocument = {
                 }
               }
             }
+          },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/auth/bearer": {
+      get: {
+        operationId: "getBearerIdentity",
+        summary: "Verify a bearer token",
+        description: "Requires an HTTP bearer token. The local fixture accepts tapir-node-token by default.",
+        tags: ["System"],
+        security: [{ BearerAuth: [] }],
+        responses: {
+          200: {
+            description: "Authenticated fixture identity",
+            content: { "application/json": { schema: { type: "object", required: ["authenticated", "scheme"], properties: { authenticated: { type: "boolean" }, scheme: { type: "string" } } } } }
           },
           401: { $ref: "#/components/responses/Unauthorized" }
         }
@@ -1003,6 +1020,15 @@ const server = http.createServer(async (request, response) => {
         return;
       }
       sendJson(response, 200, { authenticated: true, scheme: "apiKey" });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/auth/bearer") {
+      if (request.headers.authorization !== `Bearer ${fixtureBearerToken}`) {
+        sendJson(response, 401, problem(401, "Unauthorized", "Provide the fixture bearer token in the Authorization header."));
+        return;
+      }
+      sendJson(response, 200, { authenticated: true, scheme: "bearer" });
       return;
     }
 

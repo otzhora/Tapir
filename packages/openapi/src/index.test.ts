@@ -168,4 +168,18 @@ describe("BasicOpenApiNormalizer", () => {
       }
     });
   });
+
+  it("does not attach unrelated root security schemes to explicitly public operations", () => {
+    const normalized = new BasicOpenApiNormalizer().normalize({
+      openapi: "3.0.3",
+      info: { title: "Mixed API", version: "1" },
+      security: [{ BearerAuth: [] }],
+      components: { securitySchemes: { BearerAuth: { type: "http", scheme: "bearer" } } },
+      paths: {
+        "/public": { get: { security: [], responses: { "200": { description: "OK" } } } }
+      }
+    });
+
+    expect(normalized.operations[0]).toMatchObject({ securityRequirements: [], securitySchemes: [] });
+  });
 });

@@ -186,20 +186,31 @@ export class SqliteApiDefinitionRepository implements ApiDefinitionRepository {
 export class SqliteAuthProfileRepository implements AuthProfileRepository {
   constructor(private db: SqliteDatabase) {}
 
-  async upsertApiKeyHeader(input: {
+  async upsert(input: {
     workspaceId: string;
     serverInstanceId: string;
+    schemeKey: string;
+    type: "apiKey" | "bearer" | "basic";
     name: string;
-    headerName: string;
+    parameterName?: string;
+    location?: "query" | "header" | "cookie";
+    username?: string;
     secretValue: string;
   }): Promise<UserAuthProfile> {
-    const existing = this.db.prepare("select * from user_auth_profiles where server_instance_id = ? and type = 'apiKeyHeader' limit 1")
-      .get(input.serverInstanceId) as DbAuthProfile | undefined;
+    const rows = this.db.prepare("select * from user_auth_profiles where server_instance_id = ? order by updated_at desc")
+      .all(input.serverInstanceId) as DbAuthProfile[];
+    const existing = rows.find((row) => authSchemeKey(row) === input.schemeKey);
     const now = new Date().toISOString();
+    const configJson = JSON.stringify({
+      schemeKey: input.schemeKey,
+      parameterName: input.parameterName,
+      location: input.location,
+      username: input.username
+    });
 
     if (existing) {
-      this.db.prepare("update user_auth_profiles set name = ?, config_json = ?, updated_at = ? where id = ?")
-        .run(input.name, JSON.stringify({ headerName: input.headerName }), now, existing.id);
+      this.db.prepare("update user_auth_profiles set name = ?, type = ?, config_json = ?, updated_at = ? where id = ?")
+        .run(input.name, input.type, configJson, now, existing.id);
       this.db.prepare("update secret_values set encrypted_or_plain_value = ?, updated_at = ? where auth_profile_id = ?")
         .run(input.secretValue, now, existing.id);
       const updated = this.db.prepare("select * from user_auth_profiles where id = ?").get(existing.id) as DbAuthProfile;
@@ -211,8 +222,8 @@ export class SqliteAuthProfileRepository implements AuthProfileRepository {
       workspaceId: input.workspaceId,
       serverInstanceId: input.serverInstanceId,
       name: input.name,
-      type: "apiKeyHeader",
-      configJson: JSON.stringify({ headerName: input.headerName }),
+      type: input.type,
+      configJson,
       secretRef: crypto.randomUUID(),
       createdAt: now,
       updatedAt: now
@@ -228,14 +239,42 @@ export class SqliteAuthProfileRepository implements AuthProfileRepository {
     return profile;
   }
 
-  async getForServer(serverInstanceId: string): Promise<{ profile: UserAuthProfile; secret: SecretValue } | null> {
-    const profileRow = this.db.prepare("select * from user_auth_profiles where server_instance_id = ? order by updated_at desc limit 1")
-      .get(serverInstanceId) as DbAuthProfile | undefined;
-    if (!profileRow) return null;
-    const secretRow = this.db.prepare("select * from secret_values where auth_profile_id = ? limit 1")
-      .get(profileRow.id) as DbSecret | undefined;
-    if (!secretRow) return null;
-    return { profile: mapAuthProfile(profileRow), secret: mapSecret(secretRow) };
+  async listForServer(serverInstanceId: string): Promise<Array<{ profile: UserAuthProfile; secret: SecretValue }>> {
+    const rows = this.db.prepare(`
+      select p.*, s.id as stored_secret_id, s.auth_profile_id, s.encrypted_or_plain_value,
+        s.created_at as secret_created_at, s.updated_at as secret_updated_at
+      from user_auth_profiles p
+      join secret_values s on s.auth_profile_id = p.id
+      where p.server_instance_id = ?
+      order by p.updated_at desc
+    `).all(serverInstanceId) as Array<DbAuthProfile & {
+      stored_secret_id: string;
+      auth_profile_id: string;
+      encrypted_or_plain_value: string;
+      secret_created_at: string;
+      secret_updated_at: string;
+    }>;
+    return rows.map((row) => ({
+      profile: mapAuthProfile(row),
+      secret: mapSecret({
+        id: row.stored_secret_id,
+        auth_profile_id: row.auth_profile_id,
+        encrypted_or_plain_value: row.encrypted_or_plain_value,
+        created_at: row.secret_created_at,
+        updated_at: row.secret_updated_at
+      })
+    }));
+  }
+
+  async delete(serverInstanceId: string, schemeKey: string): Promise<void> {
+    const rows = this.db.prepare("select * from user_auth_profiles where server_instance_id = ?")
+      .all(serverInstanceId) as DbAuthProfile[];
+    const profile = rows.find((row) => authSchemeKey(row) === schemeKey);
+    if (!profile) return;
+    this.db.transaction(() => {
+      this.db.prepare("delete from secret_values where auth_profile_id = ?").run(profile.id);
+      this.db.prepare("delete from user_auth_profiles where id = ?").run(profile.id);
+    })();
   }
 }
 
@@ -356,7 +395,7 @@ type DbWorkspace = { id: string; name: string; created_at: string; updated_at: s
 type DbServer = { id: string; workspace_id: string; name: string; base_url: string; spec_url: string; api_definition_source_id: string | null; created_at: string; updated_at: string };
 type DbServerVariable = { id: string; workspace_id: string; server_instance_id: string; key: string; value: string; created_at: string; updated_at: string };
 type DbDefinition = { id: string; source_id: string; name: string; version: string; raw_spec_json: string; normalized_json: string; fetched_at: string };
-type DbAuthProfile = { id: string; workspace_id: string; server_instance_id: string | null; name: string; type: "apiKeyHeader"; config_json: string; secret_ref: string; created_at: string; updated_at: string };
+type DbAuthProfile = { id: string; workspace_id: string; server_instance_id: string | null; name: string; type: UserAuthProfile["type"]; config_json: string; secret_ref: string; created_at: string; updated_at: string };
 type DbSecret = { id: string; auth_profile_id: string; encrypted_or_plain_value: string; created_at: string; updated_at: string };
 type DbHistory = { id: string; workspace_id: string; server_instance_id: string; operation_id: string | null; request_draft_id: string | null; request_snapshot_json: string; response_status: number | null; response_headers_json: string | null; response_body: string | null; duration_ms: number | null; created_at: string };
 type DbRequestDraft = {
@@ -399,6 +438,17 @@ function mapDefinition(row: DbDefinition): ApiDefinition {
 
 function mapAuthProfile(row: DbAuthProfile): UserAuthProfile {
   return { id: row.id, workspaceId: row.workspace_id, serverInstanceId: row.server_instance_id, name: row.name, type: row.type, configJson: row.config_json, secretRef: row.secret_ref, createdAt: row.created_at, updatedAt: row.updated_at };
+}
+
+function authSchemeKey(row: DbAuthProfile): string {
+  try {
+    const config = JSON.parse(row.config_json) as { schemeKey?: unknown; headerName?: unknown };
+    if (typeof config.schemeKey === "string") return config.schemeKey;
+    if (row.type === "apiKeyHeader" && typeof config.headerName === "string") return `legacy:header:${config.headerName.toLowerCase()}`;
+  } catch {
+    // Invalid saved profiles are ignored by scheme-key lookups and reported by the application layer.
+  }
+  return `profile:${row.id}`;
 }
 
 function mapSecret(row: DbSecret): SecretValue {

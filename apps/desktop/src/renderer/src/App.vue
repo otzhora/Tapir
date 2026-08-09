@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from "vue";
 import { History as HistoryIcon, Server as ServerIcon } from "lucide-vue-next";
-import type { CallHistoryEntry, NormalizedOperation, ServerWithDefinition } from "@tapir/core";
+import type { CallHistoryEntry, NormalizedOperation, SaveAuthenticationRequest, ServerWithDefinition } from "@tapir/core";
 import AppHeader from "./components/AppHeader.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
 import RequestWorkspace from "./components/RequestWorkspace.vue";
@@ -95,13 +95,25 @@ function selectServer(serverId: string): void {
   workspaceServers.selectedServerId.value = serverId;
 }
 
-async function saveApiKey(headerName: string, secretValue: string): Promise<void> {
+async function saveAuthentication(input: Omit<SaveAuthenticationRequest, "serverId">): Promise<void> {
   const selected = workspaceServers.selectedServer.value;
   if (!selected) return;
   const tapir = window.tapir;
   if (!tapir) return;
-  const authentication = await tapir.saveApiKeyHeader({ serverId: selected.server.id, headerName, secretValue });
-  workspaceServers.updateServer({ ...selected, authentication });
+  const authentication = await tapir.saveAuthentication({ ...input, serverId: selected.server.id });
+  workspaceServers.updateServer({
+    ...selected,
+    authentication: [...selected.authentication.filter((item) => item.schemeKey !== authentication.schemeKey), authentication]
+  });
+  await request.refreshPreview();
+}
+
+async function deleteAuthentication(schemeKey: string): Promise<void> {
+  const selected = workspaceServers.selectedServer.value;
+  const tapir = window.tapir;
+  if (!selected || !tapir) return;
+  await tapir.deleteAuthentication({ serverId: selected.server.id, schemeKey });
+  workspaceServers.updateServer({ ...selected, authentication: selected.authentication.filter((item) => item.schemeKey !== schemeKey) });
   await request.refreshPreview();
 }
 
@@ -180,7 +192,7 @@ async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCoun
         <RequestWorkspace
           v-else
           :active-draft="request.activeDraft.value"
-          :authentication="workspaceServers.selectedServer.value?.authentication ?? null"
+          :authentication="workspaceServers.selectedServer.value?.authentication ?? []"
           :active-request-tab="request.activeRequestTab.value"
           :can-send="request.canSend.value"
           :curl-command="request.curlCommand.value"
@@ -208,7 +220,8 @@ async function serverRefreshed(server: ServerWithDefinition, deprecatedDraftCoun
           @create-draft="request.isCustomSpace.value ? request.createCustomRequest() : workspaceServers.selectedOperation.value && request.createOpenApiRequest(workspaceServers.selectedOperation.value)"
           @remove-header="request.removeHeader"
           @remove-parameter="request.removeParameter"
-          @save-api-key="saveApiKey"
+          @save-authentication="saveAuthentication"
+          @delete-authentication="deleteAuthentication"
           @select-draft="request.selectDraft"
           @set-parameter="request.setParameterValue"
           @toggle-header="request.toggleHeader"

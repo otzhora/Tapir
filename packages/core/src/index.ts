@@ -102,7 +102,7 @@ export interface UserAuthProfile {
   workspaceId: string;
   serverInstanceId: string | null;
   name: string;
-  type: "apiKeyHeader";
+  type: "apiKeyHeader" | "apiKey" | "bearer" | "basic";
   configJson: string;
   secretRef: string;
   createdAt: string;
@@ -221,14 +221,19 @@ export interface ApiDefinitionRepository {
 }
 
 export interface AuthProfileRepository {
-  upsertApiKeyHeader(input: {
+  upsert(input: {
     workspaceId: string;
     serverInstanceId: string;
+    schemeKey: string;
+    type: "apiKey" | "bearer" | "basic";
     name: string;
-    headerName: string;
+    parameterName?: string;
+    location?: "query" | "header" | "cookie";
+    username?: string;
     secretValue: string;
   }): Promise<UserAuthProfile>;
-  getForServer(serverInstanceId: string): Promise<{ profile: UserAuthProfile; secret: SecretValue } | null>;
+  listForServer(serverInstanceId: string): Promise<Array<{ profile: UserAuthProfile; secret: SecretValue }>>;
+  delete(serverInstanceId: string, schemeKey: string): Promise<void>;
 }
 
 export interface HistoryRepository {
