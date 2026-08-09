@@ -244,7 +244,7 @@ Completion evidence:
 
 ## Phase 8 — Renderer request-workspace refactor
 
-Status: `Planned`.
+Status: `Completed` on 2026-08-09.
 
 Goal: reduce coupling before authentication, body editing, and history features make the request workspace harder to change safely.
 
@@ -264,6 +264,17 @@ Acceptance criteria:
 - Extracted modules have direct unit tests.
 - No new process-boundary types are defined only inside the renderer.
 
+Completion evidence:
+
+- `useOperationRequest.ts` is reduced from 582 to 382 lines and remains the stable App-facing orchestrator.
+- `useRequestDraftPersistence.ts` owns loading, optimistic state, deletion, per-draft save queues, stale-response protection, and recovery after failed saves.
+- `useRequestExecution.ts` owns request/response state, sending, previewing, typed bridge calls, inactive-draft guards, and per-draft preview generations that discard stale completions.
+- `useRequestHistoryRestoration.ts` owns standalone and OpenAPI restoration plus response reconstruction, including empty-body responses.
+- `requestDraftModel.ts` contains small typed builders for draft creation and operation/custom IPC payloads, along with defensive saved-field parsers.
+- Direct unit tests cover IPC payload fidelity, malformed persisted arrays, autosave ordering, failed-save recovery, stale save responses, stale preview responses, and history response reconstruction.
+- The existing App behavior tests continue to pass without changing the composable's public API; all boundary payload types continue to come from `@tapir/core` or the preload bridge.
+- Typechecking, 72 tests, fixture smoke tests, a fresh production Windows package build, the extracted-ZIP packaged-app smoke test, and `git diff --check` pass.
+
 ## Progress log
 
 ### 2026-08-09
@@ -282,3 +293,5 @@ Acceptance criteria:
 - Completed Phase 6 OpenAPI compatibility and diagnostics; commit recorded after verification.
 - Committed Phase 6 as `7cfc33b` (`Broaden OpenAPI compatibility`).
 - Completed Phase 7 packaged application verification; commit recorded after verification.
+- Committed Phase 7 as `c53e5fc` (`Verify packaged Windows application`).
+- Completed Phase 8 renderer request-workspace refactor; commit recorded after verification.

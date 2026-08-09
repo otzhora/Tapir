@@ -1,23 +1,20 @@
-import { computed, nextTick, reactive, ref, watch, type ComputedRef, type Ref } from "vue";
+import { computed, reactive, ref, watch, type ComputedRef, type Ref } from "vue";
 import type {
-  CallHistoryEntry,
-  CallOperationRequest,
-  CallOperationResponse,
   HttpMethod,
   NormalizedOperation,
-  PreparedOperationRequest,
   RequestDraft,
-  RequestDraftHeader,
   RequestDraftParameter,
   ServerWithDefinition,
   Workspace
 } from "@tapir/core";
-import { parameterExampleValue, requestBodyExample, requiredSchemaFields } from "@tapir/core";
+import { requestBodyExample, requiredSchemaFields } from "@tapir/core";
 import type { CollapsedPanels, RequestTab, RequestTabItem } from "../types";
-import { parseHeaders, parseRequestSnapshot, restoreRequestInputs as restoreInputsFromHistory } from "../historyRestore";
-import { plainOperation } from "../ipcPayloads";
+import { customDraftRequest, openApiDraftRequest, parseDraftHeaders, parseDraftParameters } from "../requestDraftModel";
 import { buildCurlCommand, formatJsonBody, formatRequestPreview } from "../requestFormatting";
 import { bridgeUnavailableMessage, getTapirBridge as getAvailableTapirBridge } from "../tapirBridge";
+import { useRequestDraftPersistence } from "./useRequestDraftPersistence";
+import { useRequestExecution } from "./useRequestExecution";
+import { useRequestHistoryRestoration } from "./useRequestHistoryRestoration";
 
 export const CUSTOM_OPERATION_ID = "__tapir_custom_requests__";
 
@@ -34,15 +31,18 @@ interface UseOperationRequestInput {
 }
 
 export function useOperationRequest(input: UseOperationRequestInput) {
-  const drafts = ref<RequestDraft[]>([]);
   const activeDraftBySpace = reactive<Record<string, string>>({});
-  const responseByDraftId = reactive<Record<string, CallOperationResponse | null>>({});
-  const previewByDraftId = reactive<Record<string, PreparedOperationRequest | null>>({});
-  const sendingByDraftId = reactive<Record<string, boolean>>({});
-  const previewingByDraftId = reactive<Record<string, boolean>>({});
   const automaticDraftBySpace: Record<string, Promise<RequestDraft | null> | undefined> = {};
-  const draftSaveChains: Record<string, Promise<void> | undefined> = {};
   const activeRequestTab = ref<RequestTab>("params");
+  let onDraftPersisted = (_draft: RequestDraft): void => undefined;
+  let onDraftDeleted = (_draftId: string): void => undefined;
+  const persistence = useRequestDraftPersistence({
+    workspace: input.workspace,
+    getBridge: getTapirBridge,
+    onDraftPersisted: (draft) => onDraftPersisted(draft),
+    onDraftDeleted: (draftId) => onDraftDeleted(draftId)
+  });
+  const drafts = persistence.drafts;
 
   const isCustomSpace = computed(() => input.selectedOperationId.value === CUSTOM_OPERATION_ID);
   const activeSpaceKey = computed(() => {
@@ -62,10 +62,18 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     return visibleDrafts.value.find((draft) => draft.id === activeId) ?? visibleDrafts.value[0] ?? null;
   });
   const activeOperation = computed(() => activeDraft.value?.sourceType === "openapi" ? input.selectedOperation.value : null);
-  const requestPreview = computed(() => activeDraft.value ? previewByDraftId[activeDraft.value.id] ?? null : null);
-  const responseView = computed(() => activeDraft.value ? responseByDraftId[activeDraft.value.id] ?? null : null);
-  const isSending = computed(() => activeDraft.value ? Boolean(sendingByDraftId[activeDraft.value.id]) : false);
-  const isPreviewing = computed(() => activeDraft.value ? Boolean(previewingByDraftId[activeDraft.value.id]) : false);
+  const execution = useRequestExecution({
+    activeDraft,
+    selectedOperation: input.selectedOperation,
+    selectedServer: input.selectedServer,
+    collapsedPanels: input.collapsedPanels,
+    getBridge: getTapirBridge,
+    reloadHistory: input.reloadHistory,
+    setErrorMessage: input.setErrorMessage
+  });
+  onDraftPersisted = (draft) => void execution.refreshPreview(draft);
+  onDraftDeleted = execution.discardDraftState;
+  const { isPreviewing, isSending, requestPreview, responseView } = execution;
   const selectedContentTypes = computed(() => (activeOperation.value?.requestBodyMediaTypes ?? []).map((item) => item.mediaType));
   const validationIssues = computed(() => requestPreview.value?.validationIssues ?? []);
   const canSend = computed(() => activeDraft.value !== null && !isSending.value && validationIssues.value.length === 0);
@@ -89,11 +97,25 @@ export function useOperationRequest(input: UseOperationRequestInput) {
       ?? activeOperation.value?.requestBodySchema
   ));
   const responsesSchema = computed(() => stringifySchema(activeOperation.value?.responses ?? null));
+  const historyRestoration = useRequestHistoryRestoration({
+    customOperationId: CUSTOM_OPERATION_ID,
+    operations: input.operations,
+    selectedOperationId: input.selectedOperationId,
+    selectedServerId: input.selectedServerId,
+    selectedContentTypes,
+    drafts,
+    visibleDrafts,
+    createCustomRequest,
+    createOpenApiRequest,
+    saveDraft: persistence.saveDraft,
+    selectDraft,
+    setResponse: execution.setResponse
+  });
 
   watch(activeDraft, (draft) => {
     if (!draft) return;
     activeDraftBySpace[activeSpaceKey.value] = draft.id;
-    void refreshPreview(draft);
+    void execution.refreshPreview(draft);
   });
 
   watch(requestTabs, (tabs) => {
@@ -105,9 +127,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   });
 
   async function loadDrafts(): Promise<void> {
-    const tapir = getTapirBridge();
-    if (!tapir || !input.workspace.value) return;
-    drafts.value = await tapir.listRequestDrafts(input.workspace.value.id);
+    await persistence.loadDrafts();
     await ensureActiveSpaceHasDraft();
   }
 
@@ -140,21 +160,8 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   async function createOpenApiRequest(operation: NormalizedOperation): Promise<RequestDraft | null> {
     const tapir = getTapirBridge();
     if (!tapir || !input.selectedServer.value) return null;
-    const draft = await tapir.createRequestDraft({
-      serverId: input.selectedServer.value.server.id,
-      sourceType: "openapi",
-      operationId: operation.operationId,
-      name: defaultOperationDraftName(operation),
-      method: operation.method,
-      path: operation.path,
-      url: "",
-      parameters: operation.parameters.map(parameterFromOperation),
-      headers: [],
-      body: requestBodyExample(operation.requestBodyMediaTypes[0]),
-      contentType: operation.requestBodyMediaTypes[0]?.mediaType ?? "application/json",
-      sortOrder: Date.now()
-    });
-    drafts.value = [...drafts.value, draft];
+    const draft = await tapir.createRequestDraft(openApiDraftRequest(input.selectedServer.value.server.id, operation));
+    persistence.addDraft(draft);
     activeDraftBySpace[`${input.selectedServer.value.server.id}:openapi:${operation.operationId}`] = draft.id;
     activeRequestTab.value = "params";
     return draft;
@@ -163,40 +170,22 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   async function createCustomRequest(serverId = input.selectedServer.value?.server.id ?? null, initialUrl?: string): Promise<RequestDraft | null> {
     const tapir = getTapirBridge();
     if (!tapir) return null;
-    const draft = await tapir.createRequestDraft({
-      serverId,
-      sourceType: "custom",
-      operationId: null,
-      name: "Custom request",
-      isNameManual: false,
-      method: "GET",
-      url: initialUrl ?? input.selectedServer.value?.server.baseUrl ?? "",
-      parameters: [],
-      headers: [],
-      body: "",
-      contentType: "application/json",
-      sortOrder: Date.now()
-    });
-    drafts.value = [...drafts.value, draft];
+    const draft = await tapir.createRequestDraft(customDraftRequest(serverId, initialUrl ?? input.selectedServer.value?.server.baseUrl ?? ""));
+    persistence.addDraft(draft);
     activeDraftBySpace[`${serverId ?? "no-server"}:custom`] = draft.id;
     activeRequestTab.value = "params";
     return draft;
   }
 
   async function closeDraft(draftId: string): Promise<void> {
-    const tapir = getTapirBridge();
-    if (!tapir) return;
-    await tapir.deleteRequestDraft(draftId);
-    drafts.value = drafts.value.filter((draft) => draft.id !== draftId);
-    delete responseByDraftId[draftId];
-    delete previewByDraftId[draftId];
+    await persistence.deleteDraft(draftId);
   }
 
   function selectDraft(draftId: string): void {
     activeDraftBySpace[activeSpaceKey.value] = draftId;
     activeRequestTab.value = "params";
     const draft = drafts.value.find((candidate) => candidate.id === draftId);
-    if (draft) void refreshPreview(draft);
+    if (draft) void execution.refreshPreview(draft);
   }
 
   async function updateDraft(changes: Partial<RequestDraft>): Promise<void> {
@@ -239,19 +228,19 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   async function setParameterValue(id: string, value: string): Promise<void> {
     const draft = activeDraft.value;
     if (!draft) return;
-    await saveDraft({ ...draft, parametersJson: JSON.stringify(parseParameters(draft).map((parameter) => parameter.id === id ? { ...parameter, value } : parameter)) });
+    await saveDraft({ ...draft, parametersJson: JSON.stringify(parseDraftParameters(draft).map((parameter) => parameter.id === id ? { ...parameter, value } : parameter)) });
   }
 
   async function toggleParameter(id: string, enabled: boolean): Promise<void> {
     const draft = activeDraft.value;
     if (!draft) return;
-    await saveDraft({ ...draft, parametersJson: JSON.stringify(parseParameters(draft).map((parameter) => parameter.id === id ? { ...parameter, enabled } : parameter)) });
+    await saveDraft({ ...draft, parametersJson: JSON.stringify(parseDraftParameters(draft).map((parameter) => parameter.id === id ? { ...parameter, enabled } : parameter)) });
   }
 
   async function addParameter(location: RequestDraftParameter["in"]): Promise<void> {
     const draft = activeDraft.value;
     if (!draft) return;
-    const parameters = parseParameters(draft);
+    const parameters = parseDraftParameters(draft);
     parameters.push({ id: crypto.randomUUID(), name: "", in: location, value: "", enabled: true, source: "custom" });
     await saveDraft({ ...draft, parametersJson: JSON.stringify(parameters) });
   }
@@ -259,176 +248,53 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   async function updateParameterName(id: string, name: string): Promise<void> {
     const draft = activeDraft.value;
     if (!draft) return;
-    await saveDraft({ ...draft, parametersJson: JSON.stringify(parseParameters(draft).map((parameter) => parameter.id === id ? { ...parameter, name } : parameter)) });
+    await saveDraft({ ...draft, parametersJson: JSON.stringify(parseDraftParameters(draft).map((parameter) => parameter.id === id ? { ...parameter, name } : parameter)) });
   }
 
   async function removeParameter(id: string): Promise<void> {
     const draft = activeDraft.value;
     if (!draft) return;
-    await saveDraft({ ...draft, parametersJson: JSON.stringify(parseParameters(draft).filter((parameter) => parameter.id !== id || parameter.source === "openapi")) });
+    await saveDraft({ ...draft, parametersJson: JSON.stringify(parseDraftParameters(draft).filter((parameter) => parameter.id !== id || parameter.source === "openapi")) });
   }
 
   async function addHeader(): Promise<void> {
     const draft = activeDraft.value;
     if (!draft) return;
-    await saveDraft({ ...draft, headersJson: JSON.stringify([...parseHeadersFromDraft(draft), { id: crypto.randomUUID(), name: "", value: "", enabled: true }]) });
+    await saveDraft({ ...draft, headersJson: JSON.stringify([...parseDraftHeaders(draft), { id: crypto.randomUUID(), name: "", value: "", enabled: true }]) });
   }
 
   async function updateHeader(id: string, field: "name" | "value", value: string): Promise<void> {
     const draft = activeDraft.value;
     if (!draft) return;
-    await saveDraft({ ...draft, headersJson: JSON.stringify(parseHeadersFromDraft(draft).map((header) => header.id === id ? { ...header, [field]: value } : header)) });
+    await saveDraft({ ...draft, headersJson: JSON.stringify(parseDraftHeaders(draft).map((header) => header.id === id ? { ...header, [field]: value } : header)) });
   }
 
   async function toggleHeader(id: string, enabled: boolean): Promise<void> {
     const draft = activeDraft.value;
     if (!draft) return;
-    await saveDraft({ ...draft, headersJson: JSON.stringify(parseHeadersFromDraft(draft).map((header) => header.id === id ? { ...header, enabled } : header)) });
+    await saveDraft({ ...draft, headersJson: JSON.stringify(parseDraftHeaders(draft).map((header) => header.id === id ? { ...header, enabled } : header)) });
   }
 
   async function removeHeader(id: string): Promise<void> {
     const draft = activeDraft.value;
     if (!draft) return;
-    await saveDraft({ ...draft, headersJson: JSON.stringify(parseHeadersFromDraft(draft).filter((header) => header.id !== id)) });
+    await saveDraft({ ...draft, headersJson: JSON.stringify(parseDraftHeaders(draft).filter((header) => header.id !== id)) });
   }
 
   async function saveDraft(next: RequestDraft): Promise<void> {
-    const tapir = getTapirBridge();
-    if (!tapir) return;
-    drafts.value = drafts.value.map((draft) => draft.id === next.id ? next : draft);
-
-    const saveChain = (draftSaveChains[next.id] ?? Promise.resolve()).then(async () => {
-      const latest = drafts.value.find((draft) => draft.id === next.id) ?? next;
-      const saved = await tapir.updateRequestDraft({ draft: latest });
-      const current = drafts.value.find((draft) => draft.id === saved.id);
-      if (current && editableDraftFieldsMatch(current, latest)) {
-        drafts.value = drafts.value.map((draft) => draft.id === saved.id ? saved : draft);
-        void refreshPreview(saved);
-      } else {
-        void refreshPreview(current ?? latest);
-      }
-    });
-
-    const trackedSave = saveChain.finally(() => {
-      if (draftSaveChains[next.id] === trackedSave) delete draftSaveChains[next.id];
-    });
-
-    draftSaveChains[next.id] = trackedSave;
-    await trackedSave;
+    await persistence.saveDraft(next);
   }
 
   async function callOperation(): Promise<void> {
-    const draft = activeDraft.value;
-    if (!draft) return;
-    input.setErrorMessage("");
-    const tapir = getTapirBridge();
-    if (!tapir) return;
-    sendingByDraftId[draft.id] = true;
-    try {
-      responseByDraftId[draft.id] = draft.sourceType === "custom"
-        ? await tapir.callCustomRequest(customPayload(draft))
-        : await tapir.callOperation(operationRequestPayload(draft));
-      input.collapsedPanels.response = false;
-      await input.reloadHistory();
-    } catch (error) {
-      input.setErrorMessage(toErrorMessage(error));
-    } finally {
-      sendingByDraftId[draft.id] = false;
-    }
+    await execution.callActiveRequest();
   }
 
   async function refreshPreview(draft = activeDraft.value): Promise<void> {
-    if (!draft) return;
-    const tapir = getTapirBridge();
-    if (!tapir) return;
-    previewingByDraftId[draft.id] = true;
-    try {
-      previewByDraftId[draft.id] = draft.sourceType === "custom"
-        ? await tapir.previewCustomRequest(customPayload(draft))
-        : await tapir.previewOperation(operationRequestPayload(draft));
-    } catch (error) {
-      input.setErrorMessage(toErrorMessage(error));
-    } finally {
-      previewingByDraftId[draft.id] = false;
-    }
+    await execution.refreshPreview(draft);
   }
 
-  function operationRequestPayload(draft: RequestDraft): CallOperationRequest {
-    if (!input.selectedServer.value || !input.selectedOperation.value) {
-      throw new Error("Select an operation before preparing a request.");
-    }
-    const parameters = parseParameters(draft).filter((parameter) => parameter.enabled);
-    const operation = plainOperation(input.selectedOperation.value);
-    const normalizedParameters = new Map(operation.parameters.map((parameter) => [`${parameter.in}:${parameter.name}`, parameter]));
-    operation.parameters = parameters.map((parameter) => ({
-      ...normalizedParameters.get(parameter.id),
-      name: parameter.name,
-      in: parameter.in,
-      required: parameter.required ?? false,
-      description: parameter.description
-    }));
-    return {
-      serverId: input.selectedServer.value.server.id,
-      requestDraftId: draft.id,
-      operation,
-      values: Object.fromEntries(parameters.map((parameter) => [parameter.name, parameter.value])),
-      body: draft.body,
-      contentType: draft.contentType
-    };
-  }
-
-  function customPayload(draft: RequestDraft) {
-    return {
-      serverId: draft.serverInstanceId,
-      requestDraftId: draft.id,
-      method: draft.method,
-      url: draft.url,
-      parameters: parseParameters(draft).filter((parameter) => parameter.in !== "path"),
-      headers: parseHeadersFromDraft(draft),
-      body: draft.body,
-      contentType: draft.contentType
-    };
-  }
-
-  async function restoreHistory(entry: CallHistoryEntry): Promise<void> {
-    if (!entry.operationId) {
-      const request = parseRequestSnapshot(entry.requestSnapshotJson);
-      input.selectedServerId.value = entry.serverInstanceId;
-      input.selectedOperationId.value = CUSTOM_OPERATION_ID;
-      await nextTick();
-      const draft = entry.requestDraftId ? drafts.value.find((candidate) => candidate.id === entry.requestDraftId) ?? null : null;
-      const targetDraft = draft ?? await createCustomRequest(entry.serverInstanceId, request.url);
-      if (!targetDraft) return;
-      selectDraft(targetDraft.id);
-      await nextTick();
-      await saveDraft({
-        ...targetDraft,
-        method: request.method as HttpMethod,
-        url: request.url,
-        headersJson: JSON.stringify(Object.entries(request.headers).map(([name, value]) => ({ id: crypto.randomUUID(), name, value, enabled: true }))),
-        body: request.body ?? ""
-      });
-      responseByDraftId[targetDraft.id] = historyResponse(entry);
-      return;
-    }
-    input.selectedServerId.value = entry.serverInstanceId;
-    await nextTick();
-    const operation = input.operations.value.find((candidate) => candidate.operationId === entry.operationId);
-    if (!operation) return;
-    input.selectedOperationId.value = operation.operationId;
-    await nextTick();
-    const matchedDraft = entry.requestDraftId ? visibleDrafts.value.find((candidate) => candidate.id === entry.requestDraftId) ?? null : null;
-    const draft = matchedDraft ?? visibleDrafts.value[0] ?? await createOpenApiRequest(operation);
-      if (!draft) return;
-    selectDraft(draft.id);
-    responseByDraftId[draft.id] = historyResponse(entry);
-    const restored = restoreInputsFromHistory(operation, parseRequestSnapshot(entry.requestSnapshotJson), selectedContentTypes.value[0] ?? "application/json");
-    await saveDraft({
-      ...draft,
-      body: restored.bodyValue,
-      contentType: restored.contentType,
-      parametersJson: JSON.stringify(parseParameters(draft).map((parameter) => ({ ...parameter, value: restored.parameterValues[parameter.name] ?? parameter.value })))
-    });
+  async function restoreHistory(entry: Parameters<typeof historyRestoration.restoreHistory>[0]): Promise<void> {
+    await historyRestoration.restoreHistory(entry);
   }
 
   function clearRequestInputs(): void {
@@ -436,7 +302,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     void saveDraft({
       ...activeDraft.value,
       body: "",
-      parametersJson: JSON.stringify(parseParameters(activeDraft.value).map((parameter) => ({ ...parameter, value: "" })))
+      parametersJson: JSON.stringify(parseDraftParameters(activeDraft.value).map((parameter) => ({ ...parameter, value: "" })))
     });
   }
 
@@ -468,8 +334,8 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     ensureActiveSpaceHasDraft,
     loadDrafts,
     operationUrl,
-    parameters: computed(() => parseParameters(activeDraft.value)),
-    headers: computed(() => parseHeadersFromDraft(activeDraft.value)),
+    parameters: computed(() => parseDraftParameters(activeDraft.value)),
+    headers: computed(() => parseDraftHeaders(activeDraft.value)),
     prettyBody,
     prettyRequest,
     requestBodySchema,
@@ -502,81 +368,15 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   };
 }
 
-function parameterFromOperation(parameter: NormalizedOperation["parameters"][number]): RequestDraftParameter {
-  return {
-    id: `${parameter.in}:${parameter.name}`,
-    name: parameter.name,
-    in: parameter.in,
-    value: parameterExampleValue(parameter),
-    enabled: true,
-    required: parameter.required,
-    description: parameter.description,
-    source: "openapi"
-  };
-}
-
-function parseParameters(draft: RequestDraft | null): RequestDraftParameter[] {
-  if (!draft) return [];
-  return parseJsonArray<RequestDraftParameter>(draft.parametersJson);
-}
-
-function parseHeadersFromDraft(draft: RequestDraft | null): RequestDraftHeader[] {
-  if (!draft) return [];
-  return parseJsonArray<RequestDraftHeader>(draft.headersJson);
-}
-
-function parseJsonArray<T>(value: string): T[] {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? parsed as T[] : [];
-  } catch {
-    return [];
-  }
-}
-
 function enabledParameters(draft: RequestDraft | null): RequestDraftParameter[] {
-  return parseParameters(draft).filter((parameter) => parameter.enabled);
+  return parseDraftParameters(draft).filter((parameter) => parameter.enabled);
 }
 
-function enabledHeaders(draft: RequestDraft | null): RequestDraftHeader[] {
-  return parseHeadersFromDraft(draft).filter((header) => header.enabled);
-}
-
-function editableDraftFieldsMatch(left: RequestDraft, right: RequestDraft): boolean {
-  return left.name === right.name
-    && left.isNameManual === right.isNameManual
-    && left.method === right.method
-    && left.path === right.path
-    && left.url === right.url
-    && left.parametersJson === right.parametersJson
-    && left.headersJson === right.headersJson
-    && left.body === right.body
-    && left.contentType === right.contentType
-    && left.sortOrder === right.sortOrder;
-}
-
-function defaultOperationDraftName(operation: NormalizedOperation): string {
-  return operation.summary || `${operation.method} ${operation.path}`;
-}
-
-function historyResponse(entry: CallHistoryEntry): CallOperationResponse | null {
-  if (!entry.responseBody || !entry.responseStatus) return null;
-  return {
-    request: parseRequestSnapshot(entry.requestSnapshotJson),
-    response: {
-      status: entry.responseStatus,
-      headers: parseHeaders(entry.responseHeadersJson),
-      body: entry.responseBody,
-      durationMs: entry.durationMs ?? 0
-    }
-  };
+function enabledHeaders(draft: RequestDraft | null) {
+  return parseDraftHeaders(draft).filter((header) => header.enabled);
 }
 
 function stringifySchema(value: unknown): string {
   if (!value) return "No schema declared by the OpenAPI definition.";
   return JSON.stringify(value, null, 2);
-}
-
-function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
