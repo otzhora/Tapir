@@ -221,6 +221,7 @@ async function serverDeleted(serverId: string): Promise<void> {
           :parameters="request.parameters.value"
           :pretty-request="request.prettyRequest.value"
           :request-body-schema="request.requestBodySchema.value"
+          :required-body-fields="request.requiredBodyFields.value"
           :request-preview="request.requestPreview.value"
           :request-tabs="request.requestTabs.value"
           :responses-schema="request.responsesSchema.value"
@@ -250,6 +251,7 @@ async function serverDeleted(serverId: string): Promise<void> {
           @update-method="request.updateMethod"
           @update-parameter-name="request.updateParameterName"
           @update-url="request.updateUrl"
+          @generate-body-example="request.generateBodyExample"
         />
 
         <div v-if="workspaceView === 'requests'" class="resize-handle horizontal" title="Drag to resize response" @mousedown="startResponseResize"></div>

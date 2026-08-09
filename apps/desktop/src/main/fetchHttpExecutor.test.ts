@@ -42,4 +42,24 @@ describe("FetchHttpExecutor", () => {
       headers: {}
     })).rejects.toThrow("Response body exceeds Tapir's 10 MB limit.");
   });
+
+  it("converts structured multipart bodies to FormData and lets fetch set the boundary", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response("ok"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new FetchHttpExecutor().execute({
+      method: "POST",
+      url: "https://api.example.test/upload",
+      headers: { "content-type": "multipart/form-data", "x-trace-id": "trace-1" },
+      body: JSON.stringify({ name: "Momo", tags: ["quiet", "friendly"] }),
+      bodyEncoding: "multipart-json"
+    });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.headers).toEqual({ "x-trace-id": "trace-1" });
+    expect(init.body).toBeInstanceOf(FormData);
+    expect(Array.from((init.body as FormData).entries())).toEqual([
+      ["name", "Momo"], ["tags", "quiet"], ["tags", "friendly"]
+    ]);
+  });
 });

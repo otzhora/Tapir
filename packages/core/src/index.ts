@@ -47,11 +47,14 @@ export interface NormalizedParameter {
   style?: "matrix" | "label" | "form" | "simple" | "spaceDelimited" | "pipeDelimited" | "deepObject";
   explode?: boolean;
   allowReserved?: boolean;
+  example?: unknown;
   schema?: unknown;
 }
 
 export interface NormalizedRequestBodyMediaType {
   mediaType: string;
+  required?: boolean;
+  example?: unknown;
   schema?: unknown;
 }
 
@@ -122,6 +125,7 @@ export interface PreparedRequest {
   url: string;
   headers: Record<string, string>;
   body?: string;
+  bodyEncoding?: "multipart-json";
 }
 
 export interface PreparedRequestValidationIssue {
@@ -274,3 +278,4 @@ export * from "./application.js";
 export * from "./requestPreparation.js";
 export * from "./urlNormalization.js";
 export * from "./variables.js";
+export * from "./schemaExamples.js";

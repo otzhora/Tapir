@@ -101,8 +101,10 @@ describe("BasicOpenApiNormalizer", () => {
             operationId: "updatePet",
             parameters: [{ $ref: "#/components/parameters/PetId" }],
             requestBody: {
+              required: true,
               content: {
                 "application/json": {
+                  example: { name: "Momo" },
                   schema: { $ref: "#/components/schemas/PetInput" }
                 }
               }
@@ -119,6 +121,8 @@ describe("BasicOpenApiNormalizer", () => {
       requestBodyMediaTypes: [
         {
           mediaType: "application/json",
+          required: true,
+          example: { name: "Momo" },
           schema: { type: "object", properties: { name: { type: "string" } } }
         }
       ],

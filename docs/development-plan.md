@@ -117,7 +117,7 @@ Completion evidence:
 
 ## Phase 4 — Schema-assisted request authoring
 
-Status: `Planned`.
+Status: `Completed` on 2026-08-09.
 
 Goal: shorten the path from discovering an operation to sending a valid representative request.
 
@@ -136,6 +136,16 @@ Acceptance criteria:
 - Recursive and circular schemas terminate safely.
 - Switching media types preserves or explicitly confirms destructive body changes.
 - Multipart requests execute correctly from the Electron main process.
+
+Completion evidence:
+
+- Parameter and body examples/defaults are normalized and used when new OpenAPI drafts are created.
+- Deterministic, depth-bounded schema generation covers objects, arrays, composition, enums, formats, and circular schemas.
+- Required body fields are shown in the UI and validated before execution.
+- Media-type changes preserve edited bodies; explicit regeneration requires confirmation before replacement.
+- JSON-object editors back URL-encoded and multipart form preparation, with multipart converted to `FormData` in the main process.
+- Desktop builds now compile workspace runtime dependencies first, preventing stale `dist` exports.
+- Typechecking, 47 tests, fixture smoke tests, and the production build pass.
 
 ## Phase 5 — History at workspace scale
 
@@ -234,3 +244,5 @@ Acceptance criteria:
 - Completed Phase 2 authentication; commit recorded after verification.
 - Committed Phase 2 as `08bf45f` (`Expand OpenAPI authentication support`).
 - Completed Phase 3 server lifecycle management; commit recorded after verification.
+- Committed Phase 3 as `b8871b8` (`Add server lifecycle management`).
+- Completed Phase 4 schema-assisted request authoring; commit recorded after verification.

@@ -98,6 +98,7 @@ function normalizeParameters(root: unknown, value: unknown): NormalizedParameter
     if (!["path", "query", "header", "cookie"].includes(parameter.in)) {
       return [];
     }
+    const schema = resolveRefsInValue(root, parameter.schema);
     return [{
       name: parameter.name,
       in: parameter.in as NormalizedParameter["in"],
@@ -106,7 +107,8 @@ function normalizeParameters(root: unknown, value: unknown): NormalizedParameter
       style: normalizeParameterStyle(parameter.style, parameter.in),
       explode: typeof parameter.explode === "boolean" ? parameter.explode : defaultExplode(parameter.style, parameter.in),
       allowReserved: parameter.allowReserved === true,
-      schema: resolveRefsInValue(root, parameter.schema)
+      example: parameter.example ?? (isRecord(schema) ? schema.example ?? schema.default : undefined),
+      schema
     }];
   });
 }
@@ -147,8 +149,23 @@ function normalizeRequestBodyMediaTypes(root: unknown, value: unknown): Normaliz
   return Object.entries(requestBody.content).flatMap(([mediaType, content]) => {
     const resolvedContent = resolveRef(root, content);
     if (!isRecord(resolvedContent)) return [];
-    return [{ mediaType, schema: resolveRefsInValue(root, resolvedContent.schema) }];
+    return [{
+      mediaType,
+      required: requestBody.required === true,
+      example: mediaTypeExample(resolvedContent),
+      schema: resolveRefsInValue(root, resolvedContent.schema)
+    }];
   });
+}
+
+function mediaTypeExample(content: Record<string, unknown>): unknown {
+  if (content.example !== undefined) return content.example;
+  if (!isRecord(content.examples)) return undefined;
+  for (const candidate of Object.values(content.examples)) {
+    const resolved = isRecord(candidate) && "value" in candidate ? candidate.value : undefined;
+    if (resolved !== undefined) return resolved;
+  }
+  return undefined;
 }
 
 function normalizeSecurityRequirements(value: unknown): Array<Record<string, string[]>> {

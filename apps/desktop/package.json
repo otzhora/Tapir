@@ -5,8 +5,10 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
-    "predev": "node scripts/rebuild-native.mjs",
+    "build:dependencies": "npm --workspace @tapir/core run build && npm --workspace @tapir/openapi run build && npm --workspace @tapir/storage run build",
+    "predev": "npm run build:dependencies && node scripts/rebuild-native.mjs",
     "dev": "electron-vite dev",
+    "prebuild": "npm run build:dependencies",
     "build": "vue-tsc --noEmit && electron-vite build",
     "rebuild:native": "node scripts/rebuild-native.mjs",
     "test": "node ../../node_modules/vitest/vitest.mjs run --configLoader runner",

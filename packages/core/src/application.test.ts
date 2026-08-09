@@ -157,6 +157,43 @@ describe("prepareOperationRequest", () => {
       { field: "body", message: "Request body must be valid JSON for the selected content type." }
     ]);
   });
+
+  it("validates required body fields and prepares URL-encoded and multipart forms", () => {
+    const formOperation: NormalizedOperation = {
+      ...operation,
+      requestBodyMediaTypes: [{
+        mediaType: "application/x-www-form-urlencoded",
+        required: true,
+        schema: { type: "object", required: ["name"], properties: { name: { type: "string" }, tags: { type: "array" } } }
+      }]
+    };
+    const encoded = prepareOperationRequest("https://api.example.test", {
+      operation: formOperation,
+      values: { petId: "1" },
+      contentType: "application/x-www-form-urlencoded",
+      body: JSON.stringify({ name: "Momo", tags: ["quiet", "friendly"] })
+    });
+    expect(encoded.request).toMatchObject({
+      body: "name=Momo&tags=quiet&tags=friendly",
+      headers: { "content-type": "application/x-www-form-urlencoded" }
+    });
+
+    const multipart = prepareOperationRequest("https://api.example.test", {
+      operation: { ...formOperation, requestBodyMediaTypes: [{ ...formOperation.requestBodyMediaTypes[0]!, mediaType: "multipart/form-data" }] },
+      values: { petId: "1" },
+      contentType: "multipart/form-data",
+      body: JSON.stringify({ name: "Momo" })
+    });
+    expect(multipart.request).toMatchObject({ body: JSON.stringify({ name: "Momo" }), bodyEncoding: "multipart-json" });
+    expect(multipart.request.headers).not.toHaveProperty("content-type");
+
+    const missing = prepareOperationRequest("https://api.example.test", {
+      operation: { ...formOperation, requestBodyMediaTypes: [{ ...formOperation.requestBodyMediaTypes[0]!, mediaType: "application/json" }] },
+      values: { petId: "1" },
+      body: "{}"
+    });
+    expect(missing.validationIssues).toContainEqual({ field: "body", message: "Missing required body field: name." });
+  });
 });
 
 describe("prepareCustomRequest", () => {

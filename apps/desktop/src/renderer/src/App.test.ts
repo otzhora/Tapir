@@ -179,6 +179,29 @@ describe("desktop renderer app", () => {
     await settle();
     expect(bridge.deleteServer).toHaveBeenCalledWith("server-1");
   });
+
+  it("starts OpenAPI drafts from examples and preserves edited bodies across media types", async () => {
+    const wrapper = mountApp();
+    await settle();
+    await wrapper.findAll("button").find((button) => button.text().includes("Create pet"))?.trigger("click");
+    await settle();
+
+    expect(bridge.createRequestDraft).toHaveBeenLastCalledWith(expect.objectContaining({
+      operationId: "createPet",
+      parameters: [expect.objectContaining({ name: "notify", value: "true" })],
+      body: JSON.stringify({ name: "Momo", age: 0 }, null, 2)
+    }));
+
+    await wrapper.findAll("button").find((button) => button.text().includes("Body"))?.trigger("click");
+    await wrapper.find("textarea[aria-label='Structured request body']").setValue(JSON.stringify({ name: "User edit" }));
+    await settle();
+    const contentTypeSelect = wrapper.findAll("select").find((select) => select.find("option[value='application/x-www-form-urlencoded']").exists());
+    await contentTypeSelect?.setValue("application/x-www-form-urlencoded");
+    await settle();
+    expect(bridge.updateRequestDraft).toHaveBeenLastCalledWith(expect.objectContaining({
+      draft: expect.objectContaining({ body: JSON.stringify({ name: "User edit" }), contentType: "application/x-www-form-urlencoded" })
+    }));
+  });
 });
 
 function mountApp(): VueWrapper {
@@ -284,13 +307,13 @@ function openApiDraft(input?: Partial<CreateRequestDraftRequest>): RequestDraft 
     workspaceId: "workspace-1",
     serverInstanceId: "server-1",
     sourceType: "openapi",
-    operationId: "listPets",
+    operationId: input?.operationId ?? "listPets",
     deprecatedAt: null,
     deprecationReason: null,
     name: input?.name ?? "List pets",
     isNameManual: false,
-    method: "GET",
-    path: "/pets",
+    method: input?.method ?? "GET",
+    path: input?.path ?? "/pets",
     url: "",
     parametersJson: JSON.stringify(input?.parameters ?? [{ id: "query:limit", name: "limit", in: "query", value: "", enabled: true, required: false, source: "openapi" }]),
     headersJson: JSON.stringify(input?.headers ?? []),
@@ -385,6 +408,21 @@ const listPetsOperation: NormalizedOperation = {
   securitySchemes: [{ key: "ApiKeyAuth", type: "apiKey", name: "x-api-key", in: "header" }]
 };
 
+const createPetOperation: NormalizedOperation = {
+  operationId: "createPet",
+  method: "POST",
+  path: "/pets",
+  summary: "Create pet",
+  tags: ["Pets"],
+  parameters: [{ name: "notify", in: "query", required: false, example: true, schema: { type: "boolean" } }],
+  requestBodyMediaTypes: [
+    { mediaType: "application/json", required: true, schema: { type: "object", required: ["name"], properties: { name: { type: "string", example: "Momo" }, age: { type: "integer" } } } },
+    { mediaType: "application/x-www-form-urlencoded", required: true, schema: { type: "object", required: ["name"], properties: { name: { type: "string" } } } }
+  ],
+  securityRequirements: [],
+  securitySchemes: []
+};
+
 const serverWithDefinition: ServerWithDefinition = {
   server: {
     id: "server-1",
@@ -400,7 +438,7 @@ const serverWithDefinition: ServerWithDefinition = {
     name: "Example API",
     version: "1.0.0",
     servers: ["https://api.example.test"],
-    operations: [listPetsOperation]
+    operations: [listPetsOperation, createPetOperation]
   },
   variables: [],
   authentication: []

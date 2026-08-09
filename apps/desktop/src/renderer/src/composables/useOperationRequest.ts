@@ -12,6 +12,7 @@ import type {
   ServerWithDefinition,
   Workspace
 } from "@tapir/core";
+import { parameterExampleValue, requestBodyExample, requiredSchemaFields } from "@tapir/core";
 import type { CollapsedPanels, RequestTab, RequestTabItem } from "../types";
 import { parseHeaders, parseRequestSnapshot, restoreRequestInputs as restoreInputsFromHistory } from "../historyRestore";
 import { plainOperation } from "../ipcPayloads";
@@ -82,6 +83,10 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   const curlCommand = computed(() => buildCurlCommand(requestPreview.value?.redactedRequest ?? null));
   const operationUrl = computed(() => requestPreview.value?.redactedRequest.url ?? activeDraft.value?.url ?? "");
   const requestBodySchema = computed(() => stringifySchema(activeOperation.value?.requestBodySchema ?? null));
+  const requiredBodyFields = computed(() => requiredSchemaFields(
+    activeOperation.value?.requestBodyMediaTypes.find((media) => media.mediaType === activeDraft.value?.contentType)?.schema
+      ?? activeOperation.value?.requestBodySchema
+  ));
   const responsesSchema = computed(() => stringifySchema(activeOperation.value?.responses ?? null));
 
   watch(activeDraft, (draft) => {
@@ -144,7 +149,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
       url: "",
       parameters: operation.parameters.map(parameterFromOperation),
       headers: [],
-      body: "",
+      body: requestBodyExample(operation.requestBodyMediaTypes[0]),
       contentType: operation.requestBodyMediaTypes[0]?.mediaType ?? "application/json",
       sortOrder: Date.now()
     });
@@ -218,6 +223,16 @@ export function useOperationRequest(input: UseOperationRequestInput) {
 
   async function updateContentType(value: string): Promise<void> {
     await updateDraft({ contentType: value });
+  }
+
+  async function generateBodyExample(): Promise<void> {
+    const draft = activeDraft.value;
+    if (!draft || !activeOperation.value) return;
+    const media = activeOperation.value.requestBodyMediaTypes.find((candidate) => candidate.mediaType === draft.contentType);
+    const example = requestBodyExample(media);
+    if (!example) return;
+    if (draft.body.trim() && !window.confirm("Replace the current request body with a generated example?")) return;
+    await updateDraft({ body: example });
   }
 
   async function setParameterValue(id: string, value: string): Promise<void> {
@@ -454,6 +469,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     prettyBody,
     prettyRequest,
     requestBodySchema,
+    requiredBodyFields,
     requestPreview,
     requestTabs,
     refreshPreview,
@@ -461,6 +477,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     responsesSchema,
     restoreHistory,
     selectedContentTypes,
+    generateBodyExample,
     selectDraft,
     setParameterValue,
     toggleParameter,
@@ -486,7 +503,7 @@ function parameterFromOperation(parameter: NormalizedOperation["parameters"][num
     id: `${parameter.in}:${parameter.name}`,
     name: parameter.name,
     in: parameter.in,
-    value: "",
+    value: parameterExampleValue(parameter),
     enabled: true,
     required: parameter.required,
     description: parameter.description,

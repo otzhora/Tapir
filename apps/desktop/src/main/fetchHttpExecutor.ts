@@ -9,10 +9,12 @@ export class FetchHttpExecutor implements HttpExecutor {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
     try {
+      const requestHeaders = { ...request.headers };
+      const fetchBody = prepareFetchBody(request, requestHeaders);
       const response = await fetch(request.url, {
         method: request.method,
-        headers: request.headers,
-        body: request.body,
+        headers: requestHeaders,
+        body: fetchBody,
         signal: controller.signal
       });
       const body = await readLimitedText(response, maxResponseBodyBytes, "Response body");
@@ -27,6 +29,24 @@ export class FetchHttpExecutor implements HttpExecutor {
       clearTimeout(timeout);
     }
   }
+}
+
+function prepareFetchBody(request: PreparedRequest, headers: Record<string, string>): string | FormData | undefined {
+  if (request.bodyEncoding !== "multipart-json" || !request.body) return request.body;
+  const parsed = JSON.parse(request.body) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Multipart body must be a JSON object.");
+  for (const name of Object.keys(headers)) {
+    if (name.toLowerCase() === "content-type") delete headers[name];
+  }
+  const form = new FormData();
+  for (const [key, item] of Object.entries(parsed)) {
+    const values = Array.isArray(item) ? item : [item];
+    for (const value of values) {
+      if (value === undefined || value === null) continue;
+      form.append(key, typeof value === "object" ? JSON.stringify(value) : String(value));
+    }
+  }
+  return form;
 }
 
 async function readLimitedText(response: Response, maxBytes: number, label: string): Promise<string> {

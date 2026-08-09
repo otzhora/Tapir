@@ -68,20 +68,20 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
   applyAuthentications(url, headers, cookieValues, input.authentications ?? [], resolve);
   if (cookieValues.length > 0) headers.cookie = cookieValues.join("; ");
 
-  const body = input.operation.method === "GET" || input.operation.method === "HEAD" ? undefined : input.body;
+  const rawBody = input.operation.method === "GET" || input.operation.method === "HEAD" ? undefined : input.body;
   const contentType = input.contentType?.trim() || input.operation.requestBodyMediaTypes?.[0]?.mediaType || "application/json";
-  if (body) {
-    headers["content-type"] = headers["content-type"] ?? contentType;
-    if (contentType.includes("json")) {
-      validateJsonBody(body, validationIssues);
-    }
-  }
+  const media = input.operation.requestBodyMediaTypes.find((candidate) => candidate.mediaType === contentType)
+    ?? input.operation.requestBodyMediaTypes[0];
+  if (media?.required && !rawBody?.trim()) validationIssues.push({ field: "body", message: "Request body is required." });
+  const preparedBody = prepareBody(rawBody, contentType, validationIssues, media?.schema);
+  if (preparedBody.body && !preparedBody.bodyEncoding) headers["content-type"] = headers["content-type"] ?? contentType;
 
   const request = {
     method: input.operation.method,
     url: url.toString(),
     headers,
-    body
+    body: preparedBody.body,
+    bodyEncoding: preparedBody.bodyEncoding
   };
   return {
     request,
@@ -135,18 +135,17 @@ export function prepareCustomRequest(input: PrepareCustomRequestInput): Prepared
     });
   if (cookieValues.length > 0) headers.cookie = cookieValues.join("; ");
 
-  const body = input.method === "GET" || input.method === "HEAD" ? undefined : input.body;
+  const rawBody = input.method === "GET" || input.method === "HEAD" ? undefined : input.body;
   const contentType = input.contentType?.trim() || "application/json";
-  if (body) {
-    headers["content-type"] = headers["content-type"] ?? contentType;
-    if (contentType.includes("json")) validateJsonBody(body, validationIssues);
-  }
+  const preparedBody = prepareBody(rawBody, contentType, validationIssues);
+  if (preparedBody.body && !preparedBody.bodyEncoding) headers["content-type"] = headers["content-type"] ?? contentType;
 
   const request = {
     method: input.method,
     url: url?.toString() ?? urlValue,
     headers,
-    body
+    body: preparedBody.body,
+    bodyEncoding: preparedBody.bodyEncoding
   };
   return {
     request,
@@ -235,14 +234,66 @@ function createUrl(path: string, baseUrl: string, validationIssues: PreparedRequ
   }
 }
 
-function validateJsonBody(body: string, validationIssues: PreparedRequestValidationIssue[]): void {
-  const trimmed = body.trim();
-  if (!trimmed) return;
+function prepareBody(
+  body: string | undefined,
+  contentType: string,
+  validationIssues: PreparedRequestValidationIssue[],
+  schema?: unknown
+): { body?: string; bodyEncoding?: "multipart-json" } {
+  if (!body) return {};
+  const mediaType = contentType.split(";")[0]?.trim().toLowerCase();
+  if (mediaType === "application/x-www-form-urlencoded") {
+    const value = parseObjectBody(body, validationIssues, "URL-encoded form body");
+    if (!value) return { body };
+    const encoded = new URLSearchParams();
+    appendFormValues(encoded, value);
+    return { body: encoded.toString() };
+  }
+  if (mediaType === "multipart/form-data") {
+    parseObjectBody(body, validationIssues, "Multipart body");
+    return { body, bodyEncoding: "multipart-json" };
+  }
+  if (mediaType === "application/json" || mediaType?.endsWith("+json")) {
+    const value = parseJsonBody(body, validationIssues);
+    if (value !== undefined) validateRequiredBodyFields(value, schema, validationIssues);
+  }
+  return { body };
+}
+
+function parseJsonBody(body: string, validationIssues: PreparedRequestValidationIssue[]): unknown | undefined {
   try {
-    JSON.parse(trimmed);
+    return JSON.parse(body) as unknown;
   } catch {
     validationIssues.push({ field: "body", message: "Request body must be valid JSON for the selected content type." });
+    return undefined;
   }
+}
+
+function parseObjectBody(body: string, validationIssues: PreparedRequestValidationIssue[], label: string): Record<string, unknown> | null {
+  const value = parseJsonBody(body, validationIssues);
+  if (value === undefined) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    validationIssues.push({ field: "body", message: `${label} must be a JSON object.` });
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function appendFormValues(target: URLSearchParams, value: Record<string, unknown>): void {
+  for (const [key, item] of Object.entries(value)) {
+    const values = Array.isArray(item) ? item : [item];
+    for (const nested of values) {
+      if (nested === undefined || nested === null) continue;
+      target.append(key, typeof nested === "object" ? JSON.stringify(nested) : String(nested));
+    }
+  }
+}
+
+function validateRequiredBodyFields(value: unknown, schema: unknown, validationIssues: PreparedRequestValidationIssue[]): void {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !schema || typeof schema !== "object" || Array.isArray(schema)) return;
+  const required = "required" in schema && Array.isArray(schema.required) ? schema.required : [];
+  const missing = required.filter((key): key is string => typeof key === "string" && !(key in value));
+  if (missing.length > 0) validationIssues.push({ field: "body", message: `Missing required body field${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}.` });
 }
 
 function applyAuthentications(

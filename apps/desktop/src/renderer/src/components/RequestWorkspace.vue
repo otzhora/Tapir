@@ -24,6 +24,7 @@ const props = defineProps<{
   parameters: RequestDraftParameter[];
   prettyRequest: string;
   requestBodySchema: string;
+  requiredBodyFields: string[];
   requestPreview: PreparedOperationRequest | null;
   requestTabs: RequestTabItem[];
   responsesSchema: string;
@@ -56,6 +57,7 @@ const emit = defineEmits<{
   updateMethod: [value: string];
   updateParameterName: [id: string, value: string];
   updateUrl: [value: string];
+  generateBodyExample: [];
 }>();
 
 const methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -128,6 +130,11 @@ function parameterIssues(parameter: RequestDraftParameter): ValidationIssue[] {
 function isJsonMediaType(value: string): boolean {
   const mediaType = value.split(";")[0]?.trim().toLowerCase() ?? "";
   return mediaType === "application/json" || mediaType.endsWith("+json");
+}
+
+function usesStructuredBodyEditor(value: string): boolean {
+  const mediaType = value.split(";")[0]?.trim().toLowerCase() ?? "";
+  return isJsonMediaType(value) || mediaType === "application/x-www-form-urlencoded" || mediaType === "multipart/form-data";
 }
 </script>
 
@@ -303,16 +310,22 @@ function isJsonMediaType(value: string): boolean {
           <section v-else-if="activeRequestTab === 'body'" class="grid gap-3">
             <div class="flex items-center justify-between gap-3">
               <span :class="eyebrowClass">Body</span>
-              <select :value="activeDraft.contentType" class="h-9 min-w-[190px] rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)] px-2 text-[13px] font-bold text-[var(--tapir-text-strong)] outline-none" @change="emit('updateContentType', inputValue($event))">
-                <option v-if="selectedContentTypes.length === 0" value="application/json">application/json</option>
-                <option v-for="type in selectedContentTypes" :key="type" :value="type">{{ type }}</option>
-              </select>
+              <div class="flex items-center gap-2">
+                <button v-if="selectedOperation?.requestBodyMediaTypes.length" class="mini-button" type="button" @click="emit('generateBodyExample')">Generate example</button>
+                <select :value="activeDraft.contentType" class="h-9 min-w-[190px] rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)] px-2 text-[13px] font-bold text-[var(--tapir-text-strong)] outline-none" @change="emit('updateContentType', inputValue($event))">
+                  <option v-if="selectedContentTypes.length === 0" value="application/json">application/json</option>
+                  <option v-for="type in selectedContentTypes" :key="type" :value="type">{{ type }}</option>
+                </select>
+              </div>
             </div>
+            <p v-if="requiredBodyFields.length" :class="['m-0 text-[12px]', mutedTextClass]">Required fields: {{ requiredBodyFields.join(", ") }}</p>
+            <p v-if="activeDraft.contentType === 'multipart/form-data'" :class="['m-0 text-[12px]', mutedTextClass]">Enter a JSON object. Tapir sends each property as a multipart field and repeats array values.</p>
+            <p v-if="activeDraft.contentType === 'application/x-www-form-urlencoded'" :class="['m-0 text-[12px]', mutedTextClass]">Enter a JSON object. Tapir URL-encodes its properties when sending.</p>
             <JsonCodeEditor
               :model-value="activeDraft.body"
-              :language="isJsonMediaType(activeDraft.contentType) ? 'json' : 'text'"
-              :placeholder="isJsonMediaType(activeDraft.contentType) ? '{ }' : ''"
-              :title="isJsonMediaType(activeDraft.contentType) ? 'Request JSON' : 'Request body'"
+              :language="usesStructuredBodyEditor(activeDraft.contentType) ? 'json' : 'text'"
+              :placeholder="usesStructuredBodyEditor(activeDraft.contentType) ? '{ }' : ''"
+              :title="usesStructuredBodyEditor(activeDraft.contentType) ? 'Structured request body' : 'Request body'"
               @update:model-value="emit('updateBodyValue', $event)"
             />
             <p v-for="issue in issuesForField('body')" :key="issue.message" class="field-error">
