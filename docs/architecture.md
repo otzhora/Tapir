@@ -14,6 +14,8 @@ Tapir starts as a local-first, spec-bound API workspace. The first runnable loop
 6. Send the request from the Electron main process.
 7. Store local call history in SQLite.
 
+Browser-generated cURL commands can enter this loop as custom request drafts. The renderer parses and previews the command locally, applies an explicit origin-only destination redirect, and sends only the resulting typed draft through the existing IPC boundary. Requests whose destination does not match a known server remain standalone in the visible Request Sandbox unless the user explicitly creates a server through OpenAPI discovery. Imported browser-only and sensitive headers are omitted unless the user opts in.
+
 The app intentionally does not include accounts, hosted sync, team sharing, Postman import, scripting, collection runners, plugin APIs, or OpenAPI editing.
 
 ## Package Boundaries

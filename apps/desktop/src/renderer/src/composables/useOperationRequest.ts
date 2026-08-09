@@ -10,11 +10,12 @@ import type {
 import { requestBodyExample, requiredSchemaFields } from "@tapir/core";
 import type { CollapsedPanels, RequestTab, RequestTabItem } from "../types";
 import { customDraftRequest, openApiDraftRequest, parseDraftHeaders, parseDraftParameters } from "../requestDraftModel";
-import { buildCurlCommand, formatJsonBody, formatRequestPreview } from "../requestFormatting";
+import { buildCurlCommand, formatJsonBody, formatRequestPreview, redactSensitiveRequest, type CurlShell } from "../requestFormatting";
 import { bridgeUnavailableMessage, getTapirBridge as getAvailableTapirBridge } from "../tapirBridge";
 import { useRequestDraftPersistence } from "./useRequestDraftPersistence";
 import { useRequestExecution } from "./useRequestExecution";
 import { useRequestHistoryRestoration } from "./useRequestHistoryRestoration";
+import type { CurlImportDraft } from "../curlImport";
 
 export const CUSTOM_OPERATION_ID = "__tapir_custom_requests__";
 
@@ -87,9 +88,10 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     { id: "preview", label: "Preview" }
   ]);
 
-  const prettyRequest = computed(() => formatRequestPreview(requestPreview.value?.redactedRequest ?? null));
+  const safeRequest = computed(() => redactSensitiveRequest(requestPreview.value?.redactedRequest ?? null));
+  const prettyRequest = computed(() => formatRequestPreview(safeRequest.value));
   const prettyBody = computed(() => responseView.value ? formatJsonBody(responseView.value.response.body) : "");
-  const curlCommand = computed(() => buildCurlCommand(requestPreview.value?.redactedRequest ?? null));
+  const curlCommand = computed(() => buildCurlCommand(safeRequest.value));
   const operationUrl = computed(() => requestPreview.value?.redactedRequest.url ?? activeDraft.value?.url ?? "");
   const requestBodySchema = computed(() => stringifySchema(activeOperation.value?.requestBodySchema ?? null));
   const requiredBodyFields = computed(() => requiredSchemaFields(
@@ -132,11 +134,11 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   }
 
   async function ensureActiveSpaceHasDraft(): Promise<void> {
-    if (!input.selectedServer.value) return;
     if (isCustomSpace.value) {
       if (visibleDrafts.value.length === 0) await createAutomaticDraft(activeSpaceKey.value, createCustomRequest);
       return;
     }
+    if (!input.selectedServer.value) return;
     if (!input.selectedOperation.value) return;
     if (visibleDrafts.value.length === 0) {
       const operation = input.selectedOperation.value;
@@ -174,6 +176,24 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     persistence.addDraft(draft);
     activeDraftBySpace[`${serverId ?? "no-server"}:custom`] = draft.id;
     activeRequestTab.value = "params";
+    return draft;
+  }
+
+  async function createImportedCustomRequest(imported: CurlImportDraft): Promise<RequestDraft | null> {
+    const tapir = getTapirBridge();
+    if (!tapir) return null;
+    const draft = await tapir.createRequestDraft({
+      ...customDraftRequest(imported.serverId, imported.url),
+      name: imported.name,
+      isNameManual: false,
+      method: imported.method,
+      headers: imported.headers,
+      body: imported.body,
+      contentType: imported.contentType
+    });
+    persistence.addDraft(draft);
+    activeDraftBySpace[`${imported.serverId ?? "no-server"}:custom`] = draft.id;
+    activeRequestTab.value = imported.body ? "body" : "params";
     return draft;
   }
 
@@ -306,9 +326,12 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     });
   }
 
-  async function copyCurl(): Promise<void> {
-    if (!curlCommand.value) return;
-    await navigator.clipboard.writeText(curlCommand.value);
+  async function copyCurl(shell: CurlShell = "posix", includeSecrets = false): Promise<void> {
+    const source = includeSecrets ? requestPreview.value?.request ?? null : safeRequest.value;
+    const command = buildCurlCommand(source, shell);
+    if (!command) return;
+    if (includeSecrets && !window.confirm("Copy a runnable cURL command? It may include credentials or cookies from this request.")) return;
+    await navigator.clipboard.writeText(command);
   }
 
   function getTapirBridge() {
@@ -326,6 +349,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     closeDraft,
     copyCurl,
     createCustomRequest,
+    createImportedCustomRequest,
     createOpenApiRequest,
     curlCommand,
     isCustomSpace,

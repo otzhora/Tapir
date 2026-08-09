@@ -437,6 +437,18 @@ body.is-resizing {
   min-width: 0;
 }
 
+.json-editor-shell.h-full {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: 38px minmax(0, 1fr);
+}
+
+.json-editor-shell.h-full .json-editor-host {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
 .json-editor-placeholder {
   pointer-events: none;
   position: absolute;

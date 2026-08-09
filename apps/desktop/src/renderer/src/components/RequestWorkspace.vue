@@ -6,6 +6,7 @@ import type { RequestTab, RequestTabItem } from "../types";
 import { eyebrowClass, fieldClass, iconButtonClass, mutedTextClass, primaryActionClass, softTextClass, strongTextClass } from "../uiClasses";
 import JsonCodeEditor from "./JsonCodeEditor.vue";
 import MethodBadge from "./MethodBadge.vue";
+import type { CurlShell } from "../requestFormatting";
 
 type ValidationIssue = { field: string; message: string };
 
@@ -39,7 +40,7 @@ const emit = defineEmits<{
   addParameter: [location: RequestDraftParameter["in"]];
   callOperation: [];
   closeDraft: [draftId: string];
-  copyCurl: [];
+  copyCurl: [shell: CurlShell, includeSecrets: boolean];
   createDraft: [];
   removeHeader: [id: string];
   removeParameter: [id: string];
@@ -61,6 +62,7 @@ const emit = defineEmits<{
 }>();
 
 const methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
+const curlShell = ref<CurlShell>("posix");
 const credentialValue = ref("");
 const basicUsername = ref("");
 const selectedSchemeKey = ref("");
@@ -140,7 +142,7 @@ function usesStructuredBodyEditor(value: string): boolean {
 
 <template>
   <div class="min-h-0 overflow-auto bg-[var(--tapir-bg-panel-soft)] backdrop-blur-xl">
-    <div v-if="(selectedServer || (isCustomSpace && activeDraft?.serverInstanceId === null)) && (selectedOperation || isCustomSpace)" class="grid min-h-full grid-rows-[auto_1fr]">
+    <div v-if="(selectedServer || isCustomSpace) && (selectedOperation || isCustomSpace)" class="grid min-h-full grid-rows-[auto_1fr]">
       <nav class="flex min-w-0 items-center gap-1 overflow-x-auto border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-field)] px-3 pt-2 backdrop-blur-xl">
         <button
           v-for="draft in draftTabs"
@@ -193,7 +195,7 @@ function usesStructuredBodyEditor(value: string): boolean {
           <div :class="['grid gap-2 text-[13px] md:grid-cols-3', mutedTextClass]">
             <span class="truncate">Name: <strong :class="softTextClass">{{ activeDraft.name }}</strong></span>
             <span class="truncate">Source: <strong :class="softTextClass">{{ activeDraft.deprecatedAt ? "Deprecated custom" : isCustomSpace ? "Custom" : "OpenAPI" }}</strong></span>
-            <span class="truncate">Server: <strong :class="softTextClass">{{ selectedServer?.server.name ?? "Standalone" }}</strong></span>
+            <span class="truncate">Space: <strong :class="softTextClass">{{ selectedServer?.server.name ?? "Request Sandbox" }}</strong></span>
           </div>
           <div v-if="activeDraft.deprecatedAt" class="flex items-start gap-2 rounded-md border border-[var(--tapir-warning-border)] bg-[var(--tapir-warning-bg)] p-3 text-[13px] font-bold text-[var(--tapir-warning)]">
             <AlertCircle :size="16" class="mt-0.5 shrink-0" />
@@ -348,9 +350,17 @@ function usesStructuredBodyEditor(value: string): boolean {
           <section v-else class="grid gap-3">
             <div class="mb-1 flex items-center justify-between gap-3">
               <div :class="['flex items-center gap-2 text-sm font-bold', softTextClass]"><Eye :size="17" /> Prepared request</div>
-              <button class="mini-button" :disabled="!curlCommand" title="Copy cURL" @click="emit('copyCurl')">
+              <select v-model="curlShell" class="mini-button" title="cURL shell syntax">
+                <option value="posix">bash / zsh</option>
+                <option value="powershell">PowerShell</option>
+                <option value="cmd">Windows cmd</option>
+              </select>
+              <button class="mini-button" :disabled="!curlCommand" title="Copy cURL with known credentials redacted" @click="emit('copyCurl', curlShell, false)">
                 <Clipboard :size="15" />
-                cURL
+                Redacted cURL
+              </button>
+              <button class="mini-button" :disabled="!curlCommand" title="Copy runnable cURL, potentially including credentials" @click="emit('copyCurl', curlShell, true)">
+                Runnable
               </button>
             </div>
             <pre v-if="requestPreview" class="code-block min-h-[190px]">{{ prettyRequest }}</pre>

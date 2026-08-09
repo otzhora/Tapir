@@ -8,6 +8,8 @@ Tapir is a local-first, spec-bound API workspace. The first milestone focuses on
 4. Select and call a GET operation.
 5. Display the response and persist local history.
 
+Tapir also supports importing browser-generated cURL commands into custom request tabs. Imports can retain the original destination, replace its origin with a remembered localhost target, or redirect it to an existing Tapir server while preserving the path and query. Unmatched destinations live in the standalone Request Sandbox or can create a server through normal OpenAPI discovery. Browser-only and sensitive headers are excluded by default. Prepared requests can be exported as redacted or explicitly runnable cURL for POSIX shells, PowerShell, and Windows cmd.
+
 Team, cloud, sync, accounts, scripting, Postman import, and collection runner features are intentionally out of scope for now.
 
 ## Development

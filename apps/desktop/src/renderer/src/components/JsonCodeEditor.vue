@@ -5,9 +5,10 @@ import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { linter, lintGutter } from "@codemirror/lint";
 import { openSearchPanel } from "@codemirror/search";
 import { EditorState, type Extension } from "@codemirror/state";
-import { EditorView, basicSetup } from "codemirror";
+import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import { basicSetup } from "codemirror";
 
-type EditorLanguage = "json" | "text";
+type EditorLanguage = "json" | "text" | "curl";
 
 const props = withDefaults(defineProps<{
   modelValue: string;
@@ -112,13 +113,40 @@ const editorTheme = EditorView.theme({
     backgroundImage: "none",
     backgroundColor: "var(--tapir-bg-control)",
     color: "var(--tapir-text-strong)"
+  },
+  ".tok-curl-command": {
+    color: "var(--tapir-method-get-text)",
+    fontWeight: "800"
+  },
+  ".tok-curl-option": {
+    color: "var(--tapir-accent)"
+  },
+  ".tok-curl-string": {
+    color: "var(--tapir-warning)"
+  },
+  ".tok-curl-url": {
+    color: "var(--tapir-success)",
+    textDecoration: "underline",
+    textDecorationColor: "rgba(142, 228, 201, 0.35)"
   }
 });
+
+const curlHighlighting = ViewPlugin.fromClass(class {
+  decorations: DecorationSet;
+
+  constructor(view: EditorView) {
+    this.decorations = curlDecorations(view);
+  }
+
+  update(update: ViewUpdate): void {
+    if (update.docChanged || update.viewportChanged) this.decorations = curlDecorations(update.view);
+  }
+}, { decorations: (plugin) => plugin.decorations });
 
 function editorExtensions(): Extension[] {
   const languageExtensions = props.language === "json"
     ? [lintGutter(), json(), linter(jsonParseLinter())]
-    : [];
+    : props.language === "curl" ? [curlHighlighting] : [];
 
   return [
     basicSetup,
@@ -150,6 +178,28 @@ function openSearch(): void {
   if (view) openSearchPanel(view);
 }
 
+function curlDecorations(view: EditorView): DecorationSet {
+  const ranges: Array<{ from: number; to: number; className: string }> = [];
+  const tokenPattern = /(^|\s)(curl(?:\.exe)?)(?=\s)|(--?[\w-]+)|('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|(https?:\/\/[^\s'"]+)/gi;
+  for (const { from, to } of view.visibleRanges) {
+    const text = view.state.doc.sliceString(from, to);
+    for (const match of text.matchAll(tokenPattern)) {
+      const start = from + (match.index ?? 0);
+      if (match[2]) {
+        const commandStart = start + match[1]!.length;
+        ranges.push({ from: commandStart, to: commandStart + match[2].length, className: "tok-curl-command" });
+      } else if (match[3]) {
+        ranges.push({ from: start, to: start + match[3].length, className: "tok-curl-option" });
+      } else if (match[4]) {
+        ranges.push({ from: start, to: start + match[4].length, className: "tok-curl-string" });
+      } else if (match[5]) {
+        ranges.push({ from: start, to: start + match[5].length, className: "tok-curl-url" });
+      }
+    }
+  }
+  return Decoration.set(ranges.map((range) => Decoration.mark({ class: range.className }).range(range.from, range.to)), true);
+}
+
 watch(() => props.modelValue, (nextValue) => {
   if (!view || nextValue === view.state.doc.toString()) return;
   view.dispatch({
@@ -171,7 +221,7 @@ onBeforeUnmount(() => {
   <div class="json-editor-shell">
     <div class="json-editor-toolbar">
       <span class="truncate text-[12px] font-black uppercase tracking-[0.08em] text-[var(--tapir-text-muted)]">{{ title }}</span>
-      <button class="icon-button" type="button" :title="language === 'json' ? 'Search JSON' : 'Search body'" @click="openSearch">
+      <button class="icon-button" type="button" :title="language === 'json' ? 'Search JSON' : language === 'curl' ? 'Search cURL' : 'Search body'" @click="openSearch">
         <Search :size="15" />
       </button>
     </div>

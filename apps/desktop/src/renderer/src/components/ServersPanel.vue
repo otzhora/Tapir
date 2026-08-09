@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import { ChevronRight, Plus, RefreshCw, Server, Settings } from "lucide-vue-next";
+import { Beaker, ChevronRight, Plus, RefreshCw, Server, Settings } from "lucide-vue-next";
 import type { NormalizedOperation, ServerWithDefinition, Workspace } from "@tapir/core";
 import { CUSTOM_OPERATION_ID } from "../composables/useOperationRequest";
 import { activeItemClass, eyebrowClass, fieldClass, iconButtonClass, itemClass, mutedTextClass, primaryActionClass, softTextClass, strongTextClass, subtleTextClass } from "../uiClasses";
@@ -18,12 +18,14 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   addCustomRequest: [];
+  addSandboxRequest: [];
   addOperationRequest: [operation: NormalizedOperation];
   serverAdded: [server: ServerWithDefinition];
   serverRefreshed: [server: ServerWithDefinition, deprecatedDraftCount: number];
   configureServer: [serverId: string];
   selectServer: [serverId: string];
   selectCustom: [];
+  selectSandbox: [];
   selectOperation: [operation: NormalizedOperation];
 }>();
 
@@ -124,6 +126,15 @@ function toErrorMessage(error: unknown): string {
       <p v-if="schemaMessage" class="my-2.5 rounded-md border border-[var(--tapir-method-get-border)] bg-[var(--tapir-method-get-bg)] p-2.5 text-[13px] text-[var(--tapir-success)]">{{ schemaMessage }}</p>
 
       <div class="grid gap-2">
+        <button :class="[itemClass, 'grid-cols-[28px_minmax(0,1fr)_auto] items-center px-2 py-2', selectedServerId === null && selectedOperationId === CUSTOM_OPERATION_ID && activeItemClass]" title="Standalone requests that are not attached to an OpenAPI server" @click="emit('selectSandbox')">
+          <span class="grid size-7 place-items-center rounded-md bg-[var(--tapir-bg-control-hover)] text-[var(--tapir-accent)]"><Beaker :size="16" /></span>
+          <span class="grid min-w-0 text-left">
+            <strong class="truncate">Request Sandbox</strong>
+            <small :class="['truncate', mutedTextClass]">Any URL, no server required</small>
+          </span>
+          <Plus :size="16" :class="['shrink-0 hover:text-[var(--tapir-text-strong)]', mutedTextClass]" @click.stop="emit('addSandboxRequest')" />
+        </button>
+
         <div v-for="item in servers" :key="item.server.id" class="grid gap-1">
           <div :class="[itemClass, 'grid-cols-[17px_minmax(0,1fr)_24px_28px_28px] items-center px-2 py-1.5', item.server.id === selectedServerId && activeItemClass, item.server.id === selectedServerId && 'sticky-server-header sticky top-0 z-10']">
             <Server :size="17" />

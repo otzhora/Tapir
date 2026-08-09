@@ -8,6 +8,8 @@ import RequestWorkspace from "./components/RequestWorkspace.vue";
 import ResponsePanel from "./components/ResponsePanel.vue";
 import ServerConfiguration from "./components/ServerConfiguration.vue";
 import ServersPanel from "./components/ServersPanel.vue";
+import CurlImportDialog from "./components/CurlImportDialog.vue";
+import type { CurlImportDraft } from "./curlImport";
 import { CUSTOM_OPERATION_ID, useOperationRequest } from "./composables/useOperationRequest";
 import { useResizablePanels } from "./composables/useResizablePanels";
 import { useWorkspaceServers } from "./composables/useWorkspaceServers";
@@ -21,6 +23,9 @@ const historyFilter = ref<Omit<HistoryFilter, "workspaceId">>({});
 const isLoadingHistory = ref(false);
 const sidebarView = ref<"servers" | "history">("servers");
 const workspaceView = ref<"requests" | "serverConfiguration">("requests");
+const isCurlImportOpen = ref(false);
+const curlImportError = ref("");
+const isCurlImporting = ref(false);
 
 const {
   collapsedPanels,
@@ -122,6 +127,50 @@ async function addCustomRequest(): Promise<void> {
   await request.createCustomRequest();
 }
 
+async function selectSandbox(): Promise<void> {
+  workspaceView.value = "requests";
+  workspaceServers.selectedServerId.value = null;
+  workspaceServers.selectedOperationId.value = CUSTOM_OPERATION_ID;
+  await nextTick();
+  await request.ensureActiveSpaceHasDraft();
+}
+
+async function addSandboxRequest(): Promise<void> {
+  workspaceView.value = "requests";
+  workspaceServers.selectedServerId.value = null;
+  workspaceServers.selectedOperationId.value = CUSTOM_OPERATION_ID;
+  await request.createCustomRequest(null, "");
+}
+
+async function importCurl(draft: CurlImportDraft): Promise<void> {
+  if (isCurlImporting.value) return;
+  isCurlImporting.value = true;
+  curlImportError.value = "";
+  try {
+    let serverId = draft.serverId;
+    if (draft.createServerBaseUrl) {
+      const tapir = window.tapir;
+      if (!tapir) throw new Error("Tapir's desktop bridge is unavailable.");
+      const result = await tapir.addServer(draft.createServerBaseUrl);
+      const server = { server: result.server, definition: result.normalized, variables: [], authentication: [] };
+      workspaceServers.addServer(server);
+      serverId = result.server.id;
+    }
+    workspaceView.value = "requests";
+    const imported = await request.createImportedCustomRequest({ ...draft, serverId });
+    if (!imported) return;
+    workspaceServers.selectedOperationId.value = CUSTOM_OPERATION_ID;
+    workspaceServers.selectedServerId.value = serverId;
+    await nextTick();
+    request.selectDraft(imported.id);
+    isCurlImportOpen.value = false;
+  } catch (error) {
+    curlImportError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    isCurlImporting.value = false;
+  }
+}
+
 function selectServer(serverId: string): void {
   workspaceView.value = "requests";
   workspaceServers.selectedServerId.value = serverId;
@@ -190,6 +239,17 @@ async function serverDeleted(serverId: string): Promise<void> {
       :selected-server="workspaceServers.selectedServer.value"
       :servers-count="workspaceServers.servers.value.length"
       :workspace="workspaceServers.workspace.value"
+      @import-curl="curlImportError = ''; isCurlImportOpen = true"
+    />
+
+    <CurlImportDialog
+      v-if="isCurlImportOpen"
+      :current-server-id="workspaceServers.selectedServerId.value"
+      :external-error="curlImportError"
+      :is-importing="isCurlImporting"
+      :servers="workspaceServers.servers.value"
+      @cancel="isCurlImportOpen = false"
+      @import="importCurl"
     />
 
     <main :class="['app-shell grid min-h-0 flex-1 text-[var(--tapir-text)]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-columns] duration-300 ease-out']" :style="shellStyle">
@@ -212,12 +272,14 @@ async function serverDeleted(serverId: string): Promise<void> {
         :servers="workspaceServers.servers.value"
         :workspace="workspaceServers.workspace.value"
         @add-custom-request="addCustomRequest"
+        @add-sandbox-request="addSandboxRequest"
         @add-operation-request="addOperationRequest"
         @server-added="workspaceServers.addServer"
         @server-refreshed="serverRefreshed"
         @configure-server="configureServer"
         @select-server="selectServer"
         @select-custom="selectCustom"
+        @select-sandbox="selectSandbox"
         @select-operation="selectOperation"
       />
       <HistoryPanel

@@ -107,6 +107,102 @@ describe("desktop renderer app", () => {
     }));
   });
 
+  it("imports an unmatched browser cURL request into the Request Sandbox", async () => {
+    const wrapper = mountApp();
+    await settle();
+
+    await wrapper.findAll("button").find((button) => button.text().includes("Import cURL"))?.trigger("click");
+    await nextTick();
+    await wrapper.find("textarea[aria-label='Browser cURL']").setValue("curl 'https://dev.example.test/api/orders?expand=items' -H 'content-type: application/json' -H 'authorization: Bearer secret' --data-raw '{\"name\":\"Momo\"}'");
+    await nextTick();
+
+    expect(wrapper.text()).toContain("http://localhost:5051/api/orders?expand=items");
+    expect(wrapper.text()).toContain("1 detected");
+    await wrapper.findAll("button").find((button) => button.text().includes("Import request"))?.trigger("click");
+    await settle();
+
+    expect(bridge.createRequestDraft).toHaveBeenLastCalledWith(expect.objectContaining({
+      serverId: null,
+      sourceType: "custom",
+      name: "POST /api/orders",
+      method: "POST",
+      url: "http://localhost:5051/api/orders?expand=items",
+      headers: [expect.objectContaining({ name: "content-type", value: "application/json" })],
+      body: "{\"name\":\"Momo\"}",
+      contentType: "application/json"
+    }));
+    expect(JSON.stringify(vi.mocked(bridge.createRequestDraft).mock.calls.at(-1))).not.toContain("Bearer secret");
+    expect(wrapper.text()).toContain("Request Sandbox");
+    expect(wrapper.text()).toContain("POST /api/orders");
+  });
+
+  it("recommends an existing server independently from keeping the original URL", async () => {
+    const wrapper = mountApp();
+    await settle();
+
+    await wrapper.findAll("button").find((button) => button.text().includes("Import cURL"))?.trigger("click");
+    await nextTick();
+    await wrapper.find("textarea[aria-label='Browser cURL']").setValue("curl 'https://api.example.test/undocumented/status'");
+    await wrapper.findAll("button").find((button) => button.text() === "Keep original URL")?.trigger("click");
+    await nextTick();
+
+    expect(wrapper.text()).toContain("Recommended match");
+    await wrapper.findAll("button").find((button) => button.text().includes("Import request"))?.trigger("click");
+    await settle();
+    expect(bridge.createRequestDraft).toHaveBeenLastCalledWith(expect.objectContaining({
+      serverId: "server-1",
+      sourceType: "custom",
+      url: "https://api.example.test/undocumented/status"
+    }));
+  });
+
+  it("can create a Tapir server for an unmatched original cURL destination", async () => {
+    vi.mocked(bridge.addServer).mockResolvedValue({
+      server: { ...serverWithDefinition.server, id: "server-2", name: "Dev API", baseUrl: "https://dev.example.test", specUrl: "https://dev.example.test/openapi.json" },
+      normalized: { ...serverWithDefinition.definition!, name: "Dev API", servers: ["https://dev.example.test"] }
+    });
+    const wrapper = mountApp();
+    await settle();
+
+    await wrapper.findAll("button").find((button) => button.text().includes("Import cURL"))?.trigger("click");
+    await nextTick();
+    await wrapper.find("textarea[aria-label='Browser cURL']").setValue("curl 'https://dev.example.test/api/orders'");
+    await wrapper.findAll("button").find((button) => button.text() === "Keep original URL")?.trigger("click");
+    await nextTick();
+    const createAssociation = wrapper.findAll("label").find((label) => label.text().includes("Create server from destination"));
+    await createAssociation?.find("input").setValue(true);
+    await wrapper.findAll("button").find((button) => button.text().includes("Import request"))?.trigger("click");
+    await settle();
+
+    expect(bridge.addServer).toHaveBeenCalledWith("https://dev.example.test");
+    expect(bridge.createRequestDraft).toHaveBeenLastCalledWith(expect.objectContaining({
+      serverId: "server-2",
+      sourceType: "custom",
+      url: "https://dev.example.test/api/orders"
+    }));
+    expect(wrapper.text()).toContain("Dev API");
+  });
+
+  it("keeps the importer open when server discovery for an original destination fails", async () => {
+    vi.mocked(bridge.addServer).mockRejectedValue(new Error("No OpenAPI definition found at this destination."));
+    const wrapper = mountApp();
+    await settle();
+
+    await wrapper.findAll("button").find((button) => button.text().includes("Import cURL"))?.trigger("click");
+    await nextTick();
+    await wrapper.find("textarea[aria-label='Browser cURL']").setValue("curl 'https://unknown.example.test/status'");
+    await wrapper.findAll("button").find((button) => button.text() === "Keep original URL")?.trigger("click");
+    await nextTick();
+    const createAssociation = wrapper.findAll("label").find((label) => label.text().includes("Create server from destination"));
+    await createAssociation?.find("input").setValue(true);
+    await wrapper.findAll("button").find((button) => button.text().includes("Import request"))?.trigger("click");
+    await settle();
+
+    expect(wrapper.text()).toContain("Import cURL");
+    expect(wrapper.text()).toContain("No OpenAPI definition found at this destination.");
+    expect(bridge.createRequestDraft).not.toHaveBeenCalledWith(expect.objectContaining({ url: "https://unknown.example.test/status" }));
+  });
+
   it("filters and confirms deletion of workspace history", async () => {
     const wrapper = mountApp();
     await settle();
@@ -149,7 +245,7 @@ describe("desktop renderer app", () => {
       sourceType: "custom",
       url: "https://standalone.example.test/jobs/1"
     }));
-    expect(wrapper.text()).toContain("Standalone");
+    expect(wrapper.text()).toContain("Request Sandbox");
     expect((wrapper.find("input[placeholder='https://api.example.com/resource']").element as HTMLInputElement).value).toBe("https://standalone.example.test/jobs/1");
 
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
