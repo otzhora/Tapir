@@ -213,7 +213,7 @@ Completion evidence:
 
 ## Phase 7 — Packaged application verification
 
-Status: `Planned`.
+Status: `Completed` on 2026-08-09.
 
 Goal: verify the application users install, not only the Electron/Vite compilation output.
 
@@ -231,6 +231,16 @@ Acceptance criteria:
 - A repeatable packaged-app smoke test passes locally.
 - Packaging failures preserve useful logs.
 - The installed app does not depend on repository-local files or development servers.
+
+Completion evidence:
+
+- `scripts\tapir-package-windows.cmd` produces a self-contained portable Windows x64 directory and ZIP without adding a packaging dependency.
+- Packaging rebuilds and independently loads `better-sqlite3` for Electron ABI 146 before copying the native binding into the artifact.
+- Packaging and smoke commands initialize persistent artifact logs before work begins, so compilation, native rebuild, assembly, launch, and verification failures retain diagnostics.
+- `scripts\tapir-smoke-packaged-windows.cmd` extracts the ZIP to a temporary location, launches that packaged `Tapir.exe` with a clean temporary profile, and loads the bundled production renderer and preload bridge.
+- The packaged main process creates and migrates SQLite, discovers the Node fixture, executes `getHealth` with status 200, and reads back one history entry.
+- The structured smoke report proves Electron resources and the native binding resolve from the temporary ZIP extraction rather than repository paths; no development server is used.
+- Artifact locations, prerequisites, verification scope, and remaining signing/installer work are documented in `docs/windows-packaging.md`.
 
 ## Phase 8 — Renderer request-workspace refactor
 
@@ -270,3 +280,5 @@ Acceptance criteria:
 - Completed Phase 5 workspace-scale history; commit recorded after verification.
 - Committed Phase 5 as `66b5551` (`Scale workspace request history`).
 - Completed Phase 6 OpenAPI compatibility and diagnostics; commit recorded after verification.
+- Committed Phase 6 as `7cfc33b` (`Broaden OpenAPI compatibility`).
+- Completed Phase 7 packaged application verification; commit recorded after verification.

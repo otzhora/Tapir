@@ -36,9 +36,27 @@ scripts\tapir-npm.cmd test
 scripts\tapir-npm.cmd run typecheck
 scripts\tapir-desktop-dev.cmd
 scripts\tapir-desktop-build.cmd
+scripts\tapir-package-windows.cmd
+scripts\tapir-smoke-packaged-windows.cmd
 ```
 
 Electron/Vite config bundling can fail inside the Codex filesystem sandbox with `Cannot read directory "../../../../..": Access is denied.` The desktop dev/build launchers are intended to be run with elevated permission in Codex when that sandbox error appears.
+
+## Windows package
+
+Build the self-contained Windows x64 portable folder and ZIP with:
+
+```cmd
+scripts\tapir-package-windows.cmd
+```
+
+Then verify the exact packaged executable in a clean temporary profile:
+
+```cmd
+scripts\tapir-smoke-packaged-windows.cmd
+```
+
+Artifacts are written to `artifacts/Tapir-win32-x64/` and `artifacts/Tapir-win32-x64.zip`. Packaging and smoke-test logs remain under `artifacts/` when a command fails. See [Windows Packaging](./docs/windows-packaging.md) for the verification scope and release prerequisites.
 
 To run Tapir with both local test APIs:
 

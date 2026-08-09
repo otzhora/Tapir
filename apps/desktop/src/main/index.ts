@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import type {
   TapirIpcChannel,
   TapirIpcRequest,
@@ -57,11 +57,12 @@ function electronBetterSqliteBindingPath(): string {
   return nativeBinding;
 }
 
-function createWindow(): void {
+async function createWindow(show = true): Promise<BrowserWindow> {
   const devRendererUrl = process.env.ELECTRON_RENDERER_URL
     ? validateDevRendererUrl(process.env.ELECTRON_RENDERER_URL, app.isPackaged)
     : null;
   const window = new BrowserWindow({
+    show,
     width: 1320,
     height: 860,
     minWidth: 960,
@@ -84,27 +85,84 @@ function createWindow(): void {
   });
 
   if (devRendererUrl) {
-    void window.loadURL(devRendererUrl);
+    await window.loadURL(devRendererUrl);
   } else {
-    void window.loadFile(join(__dirname, "../renderer/index.html"));
+    await window.loadFile(join(__dirname, "../renderer/index.html"));
   }
+  return window;
 }
 
-app.whenReady().then(() => {
-  return createServices();
-}).then((createdServices) => {
-  tapir = createdServices;
-  registerIpc();
-  createWindow();
+void bootstrap();
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
+async function bootstrap(): Promise<void> {
+  try {
+    await app.whenReady();
+    tapir = await createServices();
+    if (process.env.TAPIR_PACKAGED_SMOKE === "1") {
+      registerIpc();
+      await runPackagedSmoke();
+      app.exit(0);
+      return;
+    }
+    registerIpc();
+    await createWindow();
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    console.error(message);
+    writeSmokeReport({ ok: false, error: message });
+    app.exit(1);
+  }
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+
+async function runPackagedSmoke(): Promise<void> {
+  if (!app.isPackaged) throw new Error("Packaged smoke mode requires a packaged Electron application.");
+  const baseUrl = process.env.TAPIR_SMOKE_BASE_URL;
+  if (!baseUrl) throw new Error("TAPIR_SMOKE_BASE_URL is required in packaged smoke mode.");
+  const smokeWindow = await createWindow(false);
+  const rendererUrl = smokeWindow.webContents.getURL();
+  const added = await tapir.addServer({ baseUrl });
+  const operation = added.normalized.operations.find((candidate) => candidate.operationId === "getHealth")
+    ?? added.normalized.operations.find((candidate) => candidate.method === "GET" && candidate.securityRequirements.length === 0);
+  if (!operation) throw new Error("Packaged smoke fixture has no unauthenticated GET operation.");
+  const call = await tapir.callOperation({ serverId: added.server.id, operation, values: {} });
+  const state = await tapir.getInitialState();
+  const history = await tapir.listHistory({ workspaceId: state.workspace.id, limit: 10 });
+  const databasePath = join(app.getPath("userData"), "tapir-data", "tapir.sqlite");
+  writeSmokeReport({
+    ok: true,
+    isPackaged: app.isPackaged,
+    appVersion: app.getVersion(),
+    resourcesPath: process.resourcesPath,
+    userDataPath: app.getPath("userData"),
+    databasePath,
+    databaseExists: existsSync(databasePath),
+    rendererUrl,
+    rendererLoaded: rendererUrl.startsWith("file:") && rendererUrl.endsWith("/renderer/index.html"),
+    nativeModulesAbi: process.versions.modules,
+    nativeBindingPath: electronBetterSqliteBindingPath(),
+    serverId: added.server.id,
+    specUrl: added.server.specUrl,
+    operationId: operation.operationId,
+    responseStatus: call.response.status,
+    responseBody: call.response.body,
+    historyCount: history.entries.length
+  });
+  smokeWindow.destroy();
+}
+
+function writeSmokeReport(value: Record<string, unknown>): void {
+  const reportPath = process.env.TAPIR_SMOKE_REPORT;
+  if (!reportPath) return;
+  mkdirSync(dirname(reportPath), { recursive: true });
+  writeFileSync(reportPath, JSON.stringify(value, null, 2), "utf8");
+}
 
 function registerIpc(): void {
   handle("tapir:getInitialState", async () => tapir.getInitialState());
