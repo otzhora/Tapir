@@ -23,12 +23,13 @@ export const CUSTOM_OPERATION_ID = "__tapir_custom_requests__";
 
 interface UseOperationRequestInput {
   collapsedPanels: CollapsedPanels;
-  history: Ref<CallHistoryEntry[]>;
   operations: ComputedRef<NormalizedOperation[]>;
   selectedOperation: ComputedRef<NormalizedOperation | null>;
   selectedOperationId: Ref<string | null>;
   selectedServer: ComputedRef<ServerWithDefinition | null>;
+  selectedServerId: Ref<string | null>;
   workspace: Ref<Workspace | null>;
+  reloadHistory: () => Promise<void>;
   setErrorMessage: (message: string) => void;
 }
 
@@ -159,17 +160,17 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     return draft;
   }
 
-  async function createCustomRequest(): Promise<RequestDraft | null> {
+  async function createCustomRequest(serverId = input.selectedServer.value?.server.id ?? null, initialUrl?: string): Promise<RequestDraft | null> {
     const tapir = getTapirBridge();
-    if (!tapir || !input.selectedServer.value) return null;
+    if (!tapir) return null;
     const draft = await tapir.createRequestDraft({
-      serverId: input.selectedServer.value.server.id,
+      serverId,
       sourceType: "custom",
       operationId: null,
       name: "Custom request",
       isNameManual: false,
       method: "GET",
-      url: input.selectedServer.value.server.baseUrl,
+      url: initialUrl ?? input.selectedServer.value?.server.baseUrl ?? "",
       parameters: [],
       headers: [],
       body: "",
@@ -177,7 +178,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
       sortOrder: Date.now()
     });
     drafts.value = [...drafts.value, draft];
-    activeDraftBySpace[`${input.selectedServer.value.server.id}:custom`] = draft.id;
+    activeDraftBySpace[`${serverId ?? "no-server"}:custom`] = draft.id;
     activeRequestTab.value = "params";
     return draft;
   }
@@ -328,7 +329,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
         ? await tapir.callCustomRequest(customPayload(draft))
         : await tapir.callOperation(operationRequestPayload(draft));
       input.collapsedPanels.response = false;
-      if (draft.serverInstanceId) input.history.value = await tapir.listHistory(draft.serverInstanceId);
+      await input.reloadHistory();
     } catch (error) {
       input.setErrorMessage(toErrorMessage(error));
     } finally {
@@ -391,14 +392,15 @@ export function useOperationRequest(input: UseOperationRequestInput) {
 
   async function restoreHistory(entry: CallHistoryEntry): Promise<void> {
     if (!entry.operationId) {
+      const request = parseRequestSnapshot(entry.requestSnapshotJson);
+      input.selectedServerId.value = entry.serverInstanceId;
       input.selectedOperationId.value = CUSTOM_OPERATION_ID;
       await nextTick();
       const draft = entry.requestDraftId ? drafts.value.find((candidate) => candidate.id === entry.requestDraftId) ?? null : null;
-      const targetDraft = draft ?? await createCustomRequest();
+      const targetDraft = draft ?? await createCustomRequest(entry.serverInstanceId, request.url);
       if (!targetDraft) return;
       selectDraft(targetDraft.id);
       await nextTick();
-      const request = parseRequestSnapshot(entry.requestSnapshotJson);
       await saveDraft({
         ...targetDraft,
         method: request.method as HttpMethod,
@@ -409,6 +411,8 @@ export function useOperationRequest(input: UseOperationRequestInput) {
       responseByDraftId[targetDraft.id] = historyResponse(entry);
       return;
     }
+    input.selectedServerId.value = entry.serverInstanceId;
+    await nextTick();
     const operation = input.operations.value.find((candidate) => candidate.operationId === entry.operationId);
     if (!operation) return;
     input.selectedOperationId.value = operation.operationId;

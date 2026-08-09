@@ -140,7 +140,7 @@ function usesStructuredBodyEditor(value: string): boolean {
 
 <template>
   <div class="min-h-0 overflow-auto bg-[var(--tapir-bg-panel-soft)] backdrop-blur-xl">
-    <div v-if="selectedServer && (selectedOperation || isCustomSpace)" class="grid min-h-full grid-rows-[auto_1fr]">
+    <div v-if="(selectedServer || (isCustomSpace && activeDraft?.serverInstanceId === null)) && (selectedOperation || isCustomSpace)" class="grid min-h-full grid-rows-[auto_1fr]">
       <nav class="flex min-w-0 items-center gap-1 overflow-x-auto border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-field)] px-3 pt-2 backdrop-blur-xl">
         <button
           v-for="draft in draftTabs"
@@ -193,7 +193,7 @@ function usesStructuredBodyEditor(value: string): boolean {
           <div :class="['grid gap-2 text-[13px] md:grid-cols-3', mutedTextClass]">
             <span class="truncate">Name: <strong :class="softTextClass">{{ activeDraft.name }}</strong></span>
             <span class="truncate">Source: <strong :class="softTextClass">{{ activeDraft.deprecatedAt ? "Deprecated custom" : isCustomSpace ? "Custom" : "OpenAPI" }}</strong></span>
-            <span class="truncate">Server: <strong :class="softTextClass">{{ selectedServer.server.name }}</strong></span>
+            <span class="truncate">Server: <strong :class="softTextClass">{{ selectedServer?.server.name ?? "Standalone" }}</strong></span>
           </div>
           <div v-if="activeDraft.deprecatedAt" class="flex items-start gap-2 rounded-md border border-[var(--tapir-warning-border)] bg-[var(--tapir-warning-bg)] p-3 text-[13px] font-bold text-[var(--tapir-warning)]">
             <AlertCircle :size="16" class="mt-0.5 shrink-0" />

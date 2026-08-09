@@ -7,6 +7,9 @@ import type {
   AuthProfileRepository,
   CallHistoryEntry,
   HistoryRepository,
+  HistoryFilter,
+  HistoryPage,
+  HistoryQuery,
   RequestDraft,
   RequestDraftRepository,
   SecretValue,
@@ -316,16 +319,43 @@ export class SqliteHistoryRepository implements HistoryRepository {
     };
     this.db.prepare(`
       insert into call_history_entries
-      (id, workspace_id, server_instance_id, operation_id, request_draft_id, request_snapshot_json, response_status, response_headers_json, response_body, duration_ms, created_at)
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(entry.id, entry.workspaceId, entry.serverInstanceId, entry.operationId, entry.requestDraftId, entry.requestSnapshotJson, entry.responseStatus, entry.responseHeadersJson, entry.responseBody, entry.durationMs, entry.createdAt);
+      (id, workspace_id, server_instance_id, operation_id, request_draft_id, request_snapshot_json, request_method, request_url, draft_name, response_status, response_headers_json, response_body, duration_ms, created_at)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(entry.id, entry.workspaceId, entry.serverInstanceId, entry.operationId, entry.requestDraftId, entry.requestSnapshotJson, entry.requestMethod, entry.requestUrl, entry.draftName, entry.responseStatus, entry.responseHeadersJson, entry.responseBody, entry.durationMs, entry.createdAt);
     return entry;
   }
 
-  async listForServer(serverInstanceId: string): Promise<CallHistoryEntry[]> {
-    const rows = this.db.prepare("select * from call_history_entries where server_instance_id = ? order by created_at desc limit 50")
-      .all(serverInstanceId) as DbHistory[];
-    return rows.map(mapHistory);
+  async list(input: HistoryQuery): Promise<HistoryPage> {
+    const limit = Math.max(1, Math.min(input.limit ?? 50, 100));
+    const { sql, parameters } = historyWhere(input, true);
+    const rows = this.db.prepare(`
+      select h.*, coalesce(h.draft_name, d.name) as draft_name
+      from call_history_entries h
+      left join request_drafts d on d.id = h.request_draft_id
+      ${sql}
+      order by h.created_at desc, h.id desc
+      limit ?
+    `).all(...parameters, limit + 1) as DbHistory[];
+    const hasMore = rows.length > limit;
+    const entries = rows.slice(0, limit).map(mapHistory);
+    const last = entries.at(-1);
+    return { entries, nextCursor: hasMore && last ? historyCursor(last) : null };
+  }
+
+  async delete(workspaceId: string, id: string): Promise<void> {
+    this.db.prepare("delete from call_history_entries where workspace_id = ? and id = ?").run(workspaceId, id);
+  }
+
+  async clear(input: HistoryFilter): Promise<number> {
+    const { sql, parameters } = historyWhere(input, false);
+    const result = this.db.prepare(`
+      delete from call_history_entries where id in (
+        select h.id from call_history_entries h
+        left join request_drafts d on d.id = h.request_draft_id
+        ${sql}
+      )
+    `).run(...parameters);
+    return result.changes;
   }
 }
 
@@ -423,7 +453,7 @@ type DbServerVariable = { id: string; workspace_id: string; server_instance_id: 
 type DbDefinition = { id: string; source_id: string; name: string; version: string; raw_spec_json: string; normalized_json: string; fetched_at: string };
 type DbAuthProfile = { id: string; workspace_id: string; server_instance_id: string | null; name: string; type: UserAuthProfile["type"]; config_json: string; secret_ref: string; created_at: string; updated_at: string };
 type DbSecret = { id: string; auth_profile_id: string; encrypted_or_plain_value: string; created_at: string; updated_at: string };
-type DbHistory = { id: string; workspace_id: string; server_instance_id: string; operation_id: string | null; request_draft_id: string | null; request_snapshot_json: string; response_status: number | null; response_headers_json: string | null; response_body: string | null; duration_ms: number | null; created_at: string };
+type DbHistory = { id: string; workspace_id: string; server_instance_id: string | null; operation_id: string | null; request_draft_id: string | null; request_snapshot_json: string; request_method: CallHistoryEntry["requestMethod"]; request_url: string; draft_name: string | null; response_status: number | null; response_headers_json: string | null; response_body: string | null; duration_ms: number | null; created_at: string };
 type DbRequestDraft = {
   id: string;
   workspace_id: string;
@@ -482,7 +512,67 @@ function mapSecret(row: DbSecret): SecretValue {
 }
 
 function mapHistory(row: DbHistory): CallHistoryEntry {
-  return { id: row.id, workspaceId: row.workspace_id, serverInstanceId: row.server_instance_id, operationId: row.operation_id, requestDraftId: row.request_draft_id, requestSnapshotJson: row.request_snapshot_json, responseStatus: row.response_status, responseHeadersJson: row.response_headers_json, responseBody: row.response_body, durationMs: row.duration_ms, createdAt: row.created_at };
+  return { id: row.id, workspaceId: row.workspace_id, serverInstanceId: row.server_instance_id, operationId: row.operation_id, requestDraftId: row.request_draft_id, requestSnapshotJson: row.request_snapshot_json, requestMethod: row.request_method, requestUrl: row.request_url, draftName: row.draft_name, responseStatus: row.response_status, responseHeadersJson: row.response_headers_json, responseBody: row.response_body, durationMs: row.duration_ms, createdAt: row.created_at };
+}
+
+function historyWhere(input: HistoryQuery | HistoryFilter, includeCursor: boolean): { sql: string; parameters: Array<string | number> } {
+  const clauses = ["h.workspace_id = ?"];
+  const parameters: Array<string | number> = [input.workspaceId];
+  if (input.serverId === null) clauses.push("h.server_instance_id is null");
+  if (typeof input.serverId === "string") {
+    clauses.push("h.server_instance_id = ?");
+    parameters.push(input.serverId);
+  }
+  if (input.method) {
+    clauses.push("h.request_method = ?");
+    parameters.push(input.method);
+  }
+  if (input.status !== undefined) {
+    clauses.push("h.response_status = ?");
+    parameters.push(input.status);
+  }
+  if (input.operationId) {
+    clauses.push("h.operation_id = ?");
+    parameters.push(input.operationId);
+  }
+  if (input.createdAfter) {
+    clauses.push("h.created_at >= ?");
+    parameters.push(input.createdAfter);
+  }
+  if (input.createdBefore) {
+    clauses.push("h.created_at <= ?");
+    parameters.push(input.createdBefore);
+  }
+  const search = input.search?.trim();
+  if (search) {
+    clauses.push("(h.request_url like ? escape '\\' or coalesce(h.draft_name, d.name, '') like ? escape '\\' or coalesce(h.operation_id, '') like ? escape '\\')");
+    const pattern = `%${escapeLike(search)}%`;
+    parameters.push(pattern, pattern, pattern);
+  }
+  if (includeCursor && "cursor" in input && input.cursor) {
+    const cursor = parseHistoryCursor(input.cursor);
+    clauses.push("(h.created_at < ? or (h.created_at = ? and h.id < ?))");
+    parameters.push(cursor.createdAt, cursor.createdAt, cursor.id);
+  }
+  return { sql: `where ${clauses.join(" and ")}`, parameters };
+}
+
+function historyCursor(entry: CallHistoryEntry): string {
+  return Buffer.from(JSON.stringify({ createdAt: entry.createdAt, id: entry.id })).toString("base64url");
+}
+
+function parseHistoryCursor(value: string): { createdAt: string; id: string } {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as { createdAt?: unknown; id?: unknown };
+    if (typeof parsed.createdAt === "string" && typeof parsed.id === "string") return { createdAt: parsed.createdAt, id: parsed.id };
+  } catch {
+    // Fall through to the stable public validation error.
+  }
+  throw new Error("History cursor is invalid.");
+}
+
+function escapeLike(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 }
 
 function mapRequestDraft(row: DbRequestDraft): RequestDraft {

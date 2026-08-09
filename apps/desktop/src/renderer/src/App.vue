@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from "vue";
 import { History as HistoryIcon, Server as ServerIcon } from "lucide-vue-next";
-import type { CallHistoryEntry, NormalizedOperation, SaveAuthenticationRequest, ServerWithDefinition } from "@tapir/core";
+import type { CallHistoryEntry, HistoryFilter, NormalizedOperation, SaveAuthenticationRequest, ServerWithDefinition } from "@tapir/core";
 import AppHeader from "./components/AppHeader.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
 import RequestWorkspace from "./components/RequestWorkspace.vue";
@@ -11,11 +11,14 @@ import ServersPanel from "./components/ServersPanel.vue";
 import { CUSTOM_OPERATION_ID, useOperationRequest } from "./composables/useOperationRequest";
 import { useResizablePanels } from "./composables/useResizablePanels";
 import { useWorkspaceServers } from "./composables/useWorkspaceServers";
-import { bridgeUnavailableMessage, getTapirBridge } from "./tapirBridge";
+import { getTapirBridge } from "./tapirBridge";
 import { panelClass } from "./uiClasses";
 
 const errorMessage = ref("");
 const history = ref<CallHistoryEntry[]>([]);
+const historyCursor = ref<string | null>(null);
+const historyFilter = ref<Omit<HistoryFilter, "workspaceId">>({});
+const isLoadingHistory = ref(false);
 const sidebarView = ref<"servers" | "history">("servers");
 const workspaceView = ref<"requests" | "serverConfiguration">("requests");
 
@@ -34,12 +37,13 @@ const workspaceServers = useWorkspaceServers((message) => {
 
 const request = useOperationRequest({
   collapsedPanels,
-  history,
   operations: workspaceServers.operations,
   selectedOperation: workspaceServers.selectedOperation,
   selectedOperationId: workspaceServers.selectedOperationId,
   selectedServer: workspaceServers.selectedServer,
+  selectedServerId: workspaceServers.selectedServerId,
   workspace: workspaceServers.workspace,
+  reloadHistory: () => loadHistory(true),
   setErrorMessage: (message) => {
     errorMessage.value = message;
   }
@@ -48,21 +52,49 @@ const request = useOperationRequest({
 onMounted(async () => {
   await workspaceServers.loadInitialState();
   await request.loadDrafts();
+  await loadHistory(true);
 });
 
-watch(workspaceServers.selectedServerId, async (serverId) => {
-  workspaceServers.selectedOperationId.value = workspaceServers.operations.value[0]?.operationId ?? null;
-  if (!serverId) {
-    history.value = [];
-    return;
+watch(workspaceServers.selectedServerId, () => {
+  if (workspaceServers.selectedOperationId.value !== CUSTOM_OPERATION_ID) {
+    workspaceServers.selectedOperationId.value = workspaceServers.operations.value[0]?.operationId ?? null;
   }
-  const tapir = getTapirBridge();
-  if (!tapir) {
-    errorMessage.value = bridgeUnavailableMessage;
-    return;
-  }
-  history.value = await tapir.listHistory(serverId);
 });
+
+async function loadHistory(reset: boolean): Promise<void> {
+  const tapir = getTapirBridge();
+  const workspaceId = workspaceServers.workspace.value?.id;
+  if (!tapir || !workspaceId || isLoadingHistory.value) return;
+  isLoadingHistory.value = true;
+  try {
+    const page = await tapir.listHistory({ ...historyFilter.value, workspaceId, cursor: reset ? undefined : historyCursor.value ?? undefined, limit: 50 });
+    history.value = reset ? page.entries : [...history.value, ...page.entries];
+    historyCursor.value = page.nextCursor;
+  } finally {
+    isLoadingHistory.value = false;
+  }
+}
+
+async function filterHistory(filter: Omit<HistoryFilter, "workspaceId">): Promise<void> {
+  historyFilter.value = filter;
+  await loadHistory(true);
+}
+
+async function deleteHistoryEntry(id: string): Promise<void> {
+  const tapir = getTapirBridge();
+  const workspaceId = workspaceServers.workspace.value?.id;
+  if (!tapir || !workspaceId) return;
+  await tapir.deleteHistoryEntry(workspaceId, id);
+  history.value = history.value.filter((entry) => entry.id !== id);
+}
+
+async function clearHistory(): Promise<void> {
+  const tapir = getTapirBridge();
+  const workspaceId = workspaceServers.workspace.value?.id;
+  if (!tapir || !workspaceId) return;
+  await tapir.clearHistory({ ...historyFilter.value, workspaceId });
+  await loadHistory(true);
+}
 
 async function selectOperation(operation: NormalizedOperation): Promise<void> {
   workspaceView.value = "requests";
@@ -93,6 +125,7 @@ async function addCustomRequest(): Promise<void> {
 function selectServer(serverId: string): void {
   workspaceView.value = "requests";
   workspaceServers.selectedServerId.value = serverId;
+  workspaceServers.selectedOperationId.value = workspaceServers.operations.value[0]?.operationId ?? CUSTOM_OPERATION_ID;
 }
 
 async function saveAuthentication(input: Omit<SaveAuthenticationRequest, "serverId">): Promise<void> {
@@ -142,6 +175,7 @@ async function serverDeleted(serverId: string): Promise<void> {
   workspaceServers.removeServer(serverId);
   workspaceView.value = "requests";
   await request.loadDrafts();
+  await loadHistory(true);
   workspaceServers.selectedOperationId.value = workspaceServers.operations.value[0]?.operationId ?? CUSTOM_OPERATION_ID;
   await nextTick();
   await request.ensureActiveSpaceHasDraft();
@@ -189,6 +223,13 @@ async function serverDeleted(serverId: string): Promise<void> {
       <HistoryPanel
         v-else
         :history="history"
+        :servers="workspaceServers.servers.value"
+        :has-more="Boolean(historyCursor)"
+        :is-loading="isLoadingHistory"
+        @filter-history="filterHistory"
+        @load-more="loadHistory(false)"
+        @delete-history="deleteHistoryEntry"
+        @clear-history="clearHistory"
         @restore-history="request.restoreHistory"
       />
         </div>

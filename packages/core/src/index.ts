@@ -191,10 +191,13 @@ export interface HttpResponseSnapshot {
 export interface CallHistoryEntry {
   id: string;
   workspaceId: string;
-  serverInstanceId: string;
+  serverInstanceId: string | null;
   operationId: string | null;
   requestDraftId: string | null;
   requestSnapshotJson: string;
+  requestMethod: HttpMethod;
+  requestUrl: string;
+  draftName: string | null;
   responseStatus: number | null;
   responseHeadersJson: string | null;
   responseBody: string | null;
@@ -244,7 +247,30 @@ export interface AuthProfileRepository {
 
 export interface HistoryRepository {
   create(input: Omit<CallHistoryEntry, "id" | "createdAt">): Promise<CallHistoryEntry>;
-  listForServer(serverInstanceId: string): Promise<CallHistoryEntry[]>;
+  list(input: HistoryQuery): Promise<HistoryPage>;
+  delete(workspaceId: string, id: string): Promise<void>;
+  clear(input: HistoryFilter): Promise<number>;
+}
+
+export interface HistoryFilter {
+  workspaceId: string;
+  serverId?: string | null;
+  method?: HttpMethod;
+  status?: number;
+  operationId?: string;
+  search?: string;
+  createdAfter?: string;
+  createdBefore?: string;
+}
+
+export interface HistoryQuery extends HistoryFilter {
+  cursor?: string;
+  limit?: number;
+}
+
+export interface HistoryPage {
+  entries: CallHistoryEntry[];
+  nextCursor: string | null;
 }
 
 export interface RequestDraftRepository {

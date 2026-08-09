@@ -156,6 +156,41 @@ export async function runMigrations(db: SqliteDatabase): Promise<void> {
           "drop index server_variables_server_idx",
           "drop table server_variables"
         ])
+      },
+      {
+        name: "0006_workspace_history",
+        up: async ({ context }) => runTransaction(context.db, [
+          `create table call_history_entries_next (
+            id text primary key,
+            workspace_id text not null references workspaces(id),
+            server_instance_id text references server_instances(id),
+            operation_id text,
+            request_draft_id text,
+            request_snapshot_json text not null,
+            request_method text not null,
+            request_url text not null,
+            draft_name text,
+            response_status integer,
+            response_headers_json text,
+            response_body text,
+            duration_ms integer,
+            created_at text not null
+          )`,
+          `insert into call_history_entries_next
+            (id, workspace_id, server_instance_id, operation_id, request_draft_id, request_snapshot_json, request_method, request_url, draft_name, response_status, response_headers_json, response_body, duration_ms, created_at)
+            select id, workspace_id, server_instance_id, operation_id, request_draft_id, request_snapshot_json,
+              case when json_valid(request_snapshot_json) then coalesce(json_extract(request_snapshot_json, '$.method'), 'GET') else 'GET' end,
+              case when json_valid(request_snapshot_json) then coalesce(json_extract(request_snapshot_json, '$.url'), '') else '' end,
+              (select name from request_drafts where request_drafts.id = call_history_entries.request_draft_id),
+              response_status, response_headers_json, response_body, duration_ms, created_at
+            from call_history_entries`,
+          "drop table call_history_entries",
+          "alter table call_history_entries_next rename to call_history_entries",
+          "create index call_history_workspace_cursor_idx on call_history_entries(workspace_id, created_at desc, id desc)",
+          "create index call_history_server_cursor_idx on call_history_entries(server_instance_id, created_at desc, id desc)",
+          "create index call_history_workspace_method_status_idx on call_history_entries(workspace_id, request_method, response_status)"
+        ]),
+        down: async () => undefined
       }
     ],
     storage: new BetterSqliteUmzugStorage(db)

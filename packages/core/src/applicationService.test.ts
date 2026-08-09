@@ -33,7 +33,9 @@ describe("TapirApplicationService", () => {
       workspace, servers, serverVariables: unusedServerVariables(), definitions: new MemoryDefinitionRepository(), authProfiles,
       history: {
         async create(input: Parameters<HistoryRepository["create"]>[0]) { historyEntries.push(input); return { ...input, id: "history-1", createdAt: "2026-07-01T00:00:00.000Z" }; },
-        async listForServer() { return []; }
+        async list() { return { entries: [], nextCursor: null }; },
+        async delete() {},
+        async clear() { return 0; }
       },
       requestDrafts: unusedRequestDrafts(), discovery: fixedDiscovery(), normalizer: fixedNormalizer(),
       http: { async execute(request: PreparedRequest) { executed.push(request); return { status: 200, headers: {}, body: "ok", durationMs: 1 }; } }
@@ -235,6 +237,39 @@ describe("TapirApplicationService", () => {
     });
   });
 
+  it("persists and manages standalone custom-request history at workspace scope", async () => {
+    const workspace = testWorkspace();
+    const entries: Array<Parameters<HistoryRepository["create"]>[0] & { id: string; createdAt: string }> = [];
+    const history: HistoryRepository = {
+      async create(input) {
+        const entry = { ...input, id: `history-${entries.length + 1}`, createdAt: "2026-07-01T00:00:00.000Z" };
+        entries.push(entry);
+        return entry;
+      },
+      async list() { return { entries, nextCursor: null }; },
+      async delete(workspaceId, id) {
+        const index = entries.findIndex((entry) => entry.workspaceId === workspaceId && entry.id === id);
+        if (index >= 0) entries.splice(index, 1);
+      },
+      async clear(input) {
+        const before = entries.length;
+        for (let index = entries.length - 1; index >= 0; index -= 1) if (entries[index]?.workspaceId === input.workspaceId) entries.splice(index, 1);
+        return before - entries.length;
+      }
+    };
+    const service = new TapirApplicationService({
+      workspace, history, servers: new MemoryServerRepository(), definitions: new MemoryDefinitionRepository(), requestDrafts: unusedRequestDrafts(),
+      serverVariables: unusedServerVariables(), authProfiles: unusedAuthProfiles(), discovery: fixedDiscovery(), normalizer: fixedNormalizer(),
+      http: { async execute() { return { status: 204, headers: {}, body: "", durationMs: 2 }; } }
+    });
+
+    await service.callCustomRequest({ serverId: null, method: "GET", url: "https://standalone.example.test/health", parameters: [], headers: [] });
+    expect(entries[0]).toMatchObject({ serverInstanceId: null, requestMethod: "GET", requestUrl: "https://standalone.example.test/health", responseStatus: 204 });
+    await expect(service.listHistory({ workspaceId: workspace.id, serverId: null })).resolves.toMatchObject({ entries: [{ id: "history-1" }] });
+    await service.deleteHistoryEntry(workspace.id, "history-1");
+    expect(entries).toEqual([]);
+  });
+
   it("updates, refreshes, rediscovers, and deletes servers while retaining detached custom drafts", async () => {
     const workspace = testWorkspace();
     const servers = new MemoryServerRepository();
@@ -321,7 +356,7 @@ describe("TapirApplicationService", () => {
       sortOrder: 1
     });
 
-    await expect(service.listHistory("other-server")).rejects.toThrow("Server not found.");
+    await expect(service.listHistory({ workspaceId: workspace.id, serverId: "other-server" })).rejects.toThrow("Server not found.");
     await expect(service.deleteRequestDraft("other-draft")).rejects.toThrow("Request draft not found.");
     await expect(service.updateRequestDraft({
       draft: {
@@ -501,9 +536,9 @@ function unusedHistory(): HistoryRepository {
     async create() {
       throw new Error("Not used.");
     },
-    async listForServer() {
-      throw new Error("Not used.");
-    }
+    async list() { throw new Error("Not used."); },
+    async delete() { throw new Error("Not used."); },
+    async clear() { throw new Error("Not used."); }
   };
 }
 

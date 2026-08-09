@@ -149,7 +149,7 @@ Completion evidence:
 
 ## Phase 5 — History at workspace scale
 
-Status: `Planned`.
+Status: `Completed` on 2026-08-09.
 
 Goal: make history useful beyond the current fixed list of 50 server calls.
 
@@ -168,6 +168,15 @@ Acceptance criteria:
 - Queries use appropriate SQLite indexes and have repository tests.
 - Standalone custom calls can be restored from history.
 - Destructive history actions require explicit confirmation.
+
+Completion evidence:
+
+- Workspace history uses keyset pagination ordered by creation time and ID, and repository coverage proves newly arriving calls do not shift later pages.
+- Indexed SQLite queries filter by server or standalone status, method, response status, operation ID, and time range, and search retained request URLs and draft names.
+- Standalone and cross-server calls restore their request and response state, creating a detached custom draft when the original draft no longer exists.
+- Individual deletion and filtered clearing are workspace-scoped and both require confirmation in the renderer.
+- Stored response bodies are capped at 1,000,000 characters with an explicit truncation marker.
+- Typechecking, 51 tests, fixture smoke tests, `git diff --check`, and the production build pass.
 
 ## Phase 6 — OpenAPI compatibility and diagnostics
 
@@ -246,3 +255,5 @@ Acceptance criteria:
 - Completed Phase 3 server lifecycle management; commit recorded after verification.
 - Committed Phase 3 as `b8871b8` (`Add server lifecycle management`).
 - Completed Phase 4 schema-assisted request authoring; commit recorded after verification.
+- Committed Phase 4 as `717b7b7` (`Generate schema-assisted request examples`).
+- Completed Phase 5 workspace-scale history; commit recorded after verification.

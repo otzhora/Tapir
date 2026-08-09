@@ -118,7 +118,9 @@ function registerIpc(): void {
   handle("tapir:saveServerVariables", async (input) => tapir.saveServerVariables(input));
   handle("tapir:previewOperation", async (input) => tapir.previewOperation(input));
   handle("tapir:callOperation", async (input) => tapir.callOperation(input));
-  handle("tapir:listHistory", async (serverId) => tapir.listHistory(serverId));
+  handle("tapir:listHistory", async (input) => tapir.listHistory(input));
+  handle("tapir:deleteHistoryEntry", async (input) => tapir.deleteHistoryEntry(input.workspaceId, input.id));
+  handle("tapir:clearHistory", async (input) => tapir.clearHistory(input));
   handle("tapir:listRequestDrafts", async (input) => tapir.listRequestDrafts(input));
   handle("tapir:createRequestDraft", async (input) => tapir.createRequestDraft(input));
   handle("tapir:updateRequestDraft", async (input) => tapir.updateRequestDraft(input));

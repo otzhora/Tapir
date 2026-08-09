@@ -1,5 +1,8 @@
 import type {
   CallHistoryEntry,
+  HistoryFilter,
+  HistoryPage,
+  HistoryQuery,
   HttpMethod,
   NormalizedApiDefinition,
   NormalizedOperation,
@@ -200,8 +203,16 @@ export interface TapirIpcContract {
     response: PreviewOperationResponse;
   };
   "tapir:listHistory": {
-    request: string;
-    response: CallHistoryEntry[];
+    request: HistoryQuery;
+    response: HistoryPage;
+  };
+  "tapir:deleteHistoryEntry": {
+    request: { workspaceId: string; id: string };
+    response: void;
+  };
+  "tapir:clearHistory": {
+    request: HistoryFilter;
+    response: { deletedCount: number };
   };
   "tapir:listRequestDrafts": {
     request: ListRequestDraftsRequest;

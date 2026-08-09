@@ -23,6 +23,8 @@ import type {
 import type {
   ApiDefinitionRepository,
   HistoryRepository,
+  HistoryFilter,
+  HistoryQuery,
   HttpExecutor,
   NormalizedApiDefinition,
   NormalizedOperation,
@@ -242,6 +244,9 @@ export class TapirApplicationService {
       operationId: input.operation.operationId,
       requestDraftId: input.requestDraftId ?? null,
       requestSnapshotJson: JSON.stringify(prepared.redactedRequest),
+      requestMethod: prepared.redactedRequest.method,
+      requestUrl: prepared.redactedRequest.url,
+      draftName: await this.historyDraftName(input.requestDraftId),
       responseStatus: response.status,
       responseHeadersJson: JSON.stringify(response.headers),
       responseBody: response.body,
@@ -261,9 +266,21 @@ export class TapirApplicationService {
     return { ...prepared, request: prepared.redactedRequest };
   }
 
-  async listHistory(serverId: string) {
-    await this.requireWorkspaceServer(serverId);
-    return this.dependencies.history.listForServer(serverId);
+  async listHistory(input: HistoryQuery) {
+    if (input.workspaceId !== this.dependencies.workspace.id) throw new Error("Workspace not found.");
+    if (typeof input.serverId === "string") await this.requireWorkspaceServer(input.serverId);
+    return this.dependencies.history.list(input);
+  }
+
+  async deleteHistoryEntry(workspaceId: string, id: string): Promise<void> {
+    if (workspaceId !== this.dependencies.workspace.id) throw new Error("Workspace not found.");
+    await this.dependencies.history.delete(workspaceId, id);
+  }
+
+  async clearHistory(input: HistoryFilter): Promise<{ deletedCount: number }> {
+    if (input.workspaceId !== this.dependencies.workspace.id) throw new Error("Workspace not found.");
+    if (typeof input.serverId === "string") await this.requireWorkspaceServer(input.serverId);
+    return { deletedCount: await this.dependencies.history.clear(input) };
   }
 
   async listRequestDrafts(input: ListRequestDraftsRequest): Promise<RequestDraft[]> {
@@ -321,19 +338,20 @@ export class TapirApplicationService {
       throw new Error(prepared.validationIssues.map((issue) => issue.message).join(" "));
     }
     const response = await http.execute(prepared.request);
-    if (input.serverId) {
-      await history.create({
-        workspaceId: workspace.id,
-        serverInstanceId: input.serverId,
-        operationId: null,
-        requestDraftId: input.requestDraftId ?? null,
-        requestSnapshotJson: JSON.stringify(prepared.redactedRequest),
-        responseStatus: response.status,
-        responseHeadersJson: JSON.stringify(response.headers),
-        responseBody: response.body,
-        durationMs: response.durationMs
-      });
-    }
+    await history.create({
+      workspaceId: workspace.id,
+      serverInstanceId: input.serverId,
+      operationId: null,
+      requestDraftId: input.requestDraftId ?? null,
+      requestSnapshotJson: JSON.stringify(prepared.redactedRequest),
+      requestMethod: prepared.redactedRequest.method,
+      requestUrl: prepared.redactedRequest.url,
+      draftName: await this.historyDraftName(input.requestDraftId),
+      responseStatus: response.status,
+      responseHeadersJson: JSON.stringify(response.headers),
+      responseBody: response.body,
+      durationMs: response.durationMs
+    });
     return { request: prepared.redactedRequest, response };
   }
 
@@ -343,6 +361,12 @@ export class TapirApplicationService {
     const serverInstances = await servers.list(workspace.id);
     if (!serverInstances.some((server) => server.id === serverId)) throw new Error("Server not found.");
     return serverVariables.listForServer(serverId);
+  }
+
+  private async historyDraftName(draftId: string | null | undefined): Promise<string | null> {
+    if (!draftId) return null;
+    const drafts = await this.dependencies.requestDrafts.listForWorkspace(this.dependencies.workspace.id);
+    return drafts.find((draft) => draft.id === draftId)?.name ?? null;
   }
 
   private async requireWorkspaceServer(serverId: string) {

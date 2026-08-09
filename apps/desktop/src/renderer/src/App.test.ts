@@ -71,8 +71,8 @@ describe("desktop renderer app", () => {
     expect(wrapper.findAll("textarea").some((textarea) => (textarea.element as HTMLTextAreaElement).value.includes("\"pets\""))).toBe(true);
     await wrapper.findAll("button").find((button) => button.text().includes("History"))?.trigger("click");
     await nextTick();
-    expect(wrapper.text()).toContain("listPets");
-    await wrapper.find("button[title='Restore request']").trigger("click");
+    expect(wrapper.text()).toContain("List pets");
+    await wrapper.find("[title='Restore request']").trigger("click");
     await settle();
 
     expect(bridge.updateRequestDraft).toHaveBeenLastCalledWith({
@@ -105,6 +105,60 @@ describe("desktop renderer app", () => {
       method: "GET",
       url: "https://api.example.test/status"
     }));
+  });
+
+  it("filters and confirms deletion of workspace history", async () => {
+    const wrapper = mountApp();
+    await settle();
+    await wrapper.findAll("button").find((button) => button.text().includes("Send"))?.trigger("click");
+    await settle();
+    await wrapper.findAll("button").find((button) => button.text().includes("History"))?.trigger("click");
+    await wrapper.find("input[placeholder='Search URL or draft']").setValue("pets");
+    await wrapper.find("input[placeholder='Operation ID']").setValue("listPets");
+    await wrapper.findAll("button").find((button) => button.text().includes("Apply"))?.trigger("click");
+    await settle();
+    expect(bridge.listHistory).toHaveBeenLastCalledWith(expect.objectContaining({ workspaceId: "workspace-1", search: "pets", operationId: "listPets", limit: 50 }));
+
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await wrapper.find("button[title='Delete history entry']").trigger("click");
+    expect(bridge.deleteHistoryEntry).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    await wrapper.find("button[title='Delete history entry']").trigger("click");
+    await settle();
+    expect(bridge.deleteHistoryEntry).toHaveBeenCalledWith("workspace-1", "history-1");
+  });
+
+  it("restores standalone history and confirms clearing the filtered set", async () => {
+    const standalone = historyEntry({ method: "PATCH", url: "https://standalone.example.test/jobs/1", headers: { "x-trace": "safe" }, body: "{\"state\":\"ready\"}" }, null);
+    standalone.serverInstanceId = null;
+    standalone.operationId = null;
+    standalone.requestMethod = "PATCH";
+    standalone.requestUrl = "https://standalone.example.test/jobs/1";
+    standalone.draftName = "Standalone job";
+    standalone.requestSnapshotJson = JSON.stringify({ method: "PATCH", url: standalone.requestUrl, headers: { "x-trace": "safe" }, body: "{\"state\":\"ready\"}" });
+    vi.mocked(bridge.listHistory).mockResolvedValue({ entries: [standalone], nextCursor: null });
+
+    const wrapper = mountApp();
+    await settle();
+    await wrapper.findAll("button").find((button) => button.text().includes("History"))?.trigger("click");
+    await wrapper.find("[title='Restore request']").trigger("click");
+    await settle();
+
+    expect(bridge.createRequestDraft).toHaveBeenCalledWith(expect.objectContaining({
+      serverId: null,
+      sourceType: "custom",
+      url: "https://standalone.example.test/jobs/1"
+    }));
+    expect(wrapper.text()).toContain("Standalone");
+    expect((wrapper.find("input[placeholder='https://api.example.com/resource']").element as HTMLInputElement).value).toBe("https://standalone.example.test/jobs/1");
+
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await wrapper.findAll("button").find((button) => button.text().includes("Clear"))?.trigger("click");
+    expect(bridge.clearHistory).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    await wrapper.findAll("button").find((button) => button.text().includes("Clear"))?.trigger("click");
+    await settle();
+    expect(bridge.clearHistory).toHaveBeenCalledWith({ workspaceId: "workspace-1" });
   });
 
   it("saves API key auth, keeps operation IPC secret-free, and reloads only configured state", async () => {
@@ -289,7 +343,9 @@ function createMockBridge(): MockTapirBridge {
       state.history = [historyEntry(response.request, input.requestDraftId)];
       return response;
     }),
-    listHistory: vi.fn(async () => state.history),
+    listHistory: vi.fn(async () => ({ entries: state.history, nextCursor: null })),
+    deleteHistoryEntry: vi.fn(async (_workspaceId, id) => { state.history = state.history.filter((entry) => entry.id !== id); }),
+    clearHistory: vi.fn(async () => { const deletedCount = state.history.length; state.history = []; return { deletedCount }; }),
     previewCustomRequest: vi.fn(async (input: PreviewCustomRequestRequest) => ({
       request: { method: input.method, url: input.url, headers: {} },
       redactedRequest: { method: input.method, url: input.url, headers: {} },
@@ -370,7 +426,7 @@ function operationResponse(input: CallOperationRequest) {
   };
 }
 
-function historyEntry(request: ReturnType<typeof preparedOperation>["request"], requestDraftId = "draft-list-pets"): CallHistoryEntry {
+function historyEntry(request: ReturnType<typeof preparedOperation>["request"], requestDraftId: string | null = "draft-list-pets"): CallHistoryEntry {
   return {
     id: "history-1",
     workspaceId: "workspace-1",
@@ -381,6 +437,9 @@ function historyEntry(request: ReturnType<typeof preparedOperation>["request"], 
       ...request,
       url: "https://api.example.test/pets?limit=10"
     }),
+    requestMethod: request.method as CallHistoryEntry["requestMethod"],
+    requestUrl: "https://api.example.test/pets?limit=10",
+    draftName: "List pets",
     responseStatus: 200,
     responseHeadersJson: JSON.stringify({ "content-type": "application/json" }),
     responseBody: "{\"pets\":[{\"id\":\"pet-1\"}]}",

@@ -37,7 +37,8 @@ describe("SQLite storage", () => {
       { name: "0002_request_drafts" },
       { name: "0003_history_request_draft_id" },
       { name: "0004_request_draft_deprecation" },
-      { name: "0005_server_variables" }
+      { name: "0005_server_variables" },
+      { name: "0006_workspace_history" }
     ]);
   });
 
@@ -98,6 +99,9 @@ describe("SQLite storage", () => {
       operationId: "listPets",
       requestDraftId: null,
       requestSnapshotJson: "{}",
+      requestMethod: "GET",
+      requestUrl: "https://api.example.test/pets",
+      draftName: null,
       responseStatus: 200,
       responseHeadersJson: "{}",
       responseBody: "[]",
@@ -122,9 +126,9 @@ describe("SQLite storage", () => {
     await expect(authProfiles.listForServer(server.id)).resolves.toMatchObject([{
       profile: { type: "apiKey" }, secret: { encryptedOrPlainValue: "secret" }
     }]);
-    await expect(history.listForServer(server.id)).resolves.toMatchObject([
-      { operationId: "listPets", responseStatus: 200, durationMs: 42 }
-    ]);
+    await expect(history.list({ workspaceId: workspace.id, serverId: server.id })).resolves.toMatchObject({ entries: [
+      { operationId: "listPets", requestMethod: "GET", requestUrl: "https://api.example.test/pets", responseStatus: 200, durationMs: 42 }
+    ], nextCursor: null });
 
     const updated = await servers.updateConfiguration(server.id, {
       name: "Renamed API",
@@ -190,10 +194,73 @@ describe("SQLite storage", () => {
       secret: { encryptedOrPlainValue: "safeStorage:v1:legacy-value" }
     }]);
   });
+
+  it("paginates, filters, searches, and deletes workspace history including standalone calls", async () => {
+    const database = await createDatabase();
+    const workspace = ensureDefaultWorkspace(database);
+    const server = await new SqliteServerRepository(database).create({
+      id: "server-history", workspaceId: workspace.id, name: "History API", baseUrl: "https://history.example.test",
+      specUrl: "https://history.example.test/openapi.json", apiDefinitionSourceId: null
+    });
+    const drafts = new SqliteRequestDraftRepository(database);
+    const draft = await drafts.create({
+      id: "draft-health", workspaceId: workspace.id, serverInstanceId: null, sourceType: "custom", operationId: null,
+      deprecatedAt: null, deprecationReason: null, name: "Health check", isNameManual: true, method: "GET", path: "", url: "https://standalone.example.test/health",
+      parametersJson: "[]", headersJson: "[]", body: "", contentType: "application/json", sortOrder: 1
+    });
+    const history = new SqliteHistoryRepository(database);
+    const entries = [];
+    entries.push(await history.create({ ...historyInput(workspace.id, server.id, null, "GET", "https://history.example.test/pets", 200), operationId: "listPets" }));
+    entries.push(await history.create({ ...historyInput(workspace.id, null, draft.id, "GET", "https://standalone.example.test/health", 204), draftName: "Health check" }));
+    entries.push(await history.create(historyInput(workspace.id, server.id, null, "POST", "https://history.example.test/orders", 201)));
+    entries.push(await history.create(historyInput(workspace.id, server.id, null, "GET", "https://history.example.test/failures", 500)));
+    entries.forEach((entry, index) => database.prepare("update call_history_entries set created_at = ? where id = ?")
+      .run(`2026-07-01T00:00:0${index + 1}.000Z`, entry.id));
+
+    const first = await history.list({ workspaceId: workspace.id, limit: 2 });
+    const newest = await history.create(historyInput(workspace.id, server.id, null, "GET", "https://history.example.test/newest", 200));
+    database.prepare("update call_history_entries set created_at = ? where id = ?").run("2026-07-01T00:00:05.000Z", newest.id);
+    const second = await history.list({ workspaceId: workspace.id, limit: 2, cursor: first.nextCursor ?? undefined });
+    expect(first.entries).toHaveLength(2);
+    expect(second.entries).toHaveLength(2);
+    expect(new Set([...first.entries, ...second.entries].map((entry) => entry.id)).size).toBe(4);
+    expect([...first.entries, ...second.entries].map((entry) => entry.id)).not.toContain(newest.id);
+    await expect(history.list({ workspaceId: workspace.id, serverId: null })).resolves.toMatchObject({ entries: [{ draftName: "Health check" }] });
+    await expect(history.list({ workspaceId: workspace.id, method: "POST", status: 201 })).resolves.toMatchObject({ entries: [{ requestUrl: "https://history.example.test/orders" }] });
+    await expect(history.list({ workspaceId: workspace.id, operationId: "listPets" })).resolves.toMatchObject({ entries: [{ id: entries[0]?.id }] });
+    await expect(history.list({ workspaceId: workspace.id, createdAfter: "2026-07-01T00:00:03.500Z", createdBefore: "2026-07-01T00:00:04.500Z" })).resolves.toMatchObject({ entries: [{ id: entries[3]?.id }] });
+    await drafts.delete(draft.id);
+    await expect(history.list({ workspaceId: workspace.id, search: "Health check" })).resolves.toMatchObject({ entries: [{ id: entries[1]?.id }] });
+
+    await history.delete(workspace.id, entries[0]!.id);
+    expect((await history.list({ workspaceId: workspace.id })).entries.map((entry) => entry.id)).not.toContain(entries[0]!.id);
+    await expect(history.clear({ workspaceId: workspace.id, serverId: null })).resolves.toBe(1);
+    await expect(history.list({ workspaceId: workspace.id, serverId: null })).resolves.toMatchObject({ entries: [] });
+
+    const largeBody = "x".repeat(1_000_010);
+    const retained = await history.create({ ...historyInput(workspace.id, server.id, null, "GET", "https://history.example.test/large", 200), responseBody: largeBody });
+    expect(retained.responseBody).toHaveLength(1_000_049);
+    expect(retained.responseBody?.endsWith("[Tapir truncated this stored history response.]")).toBe(true);
+  });
 });
 
 async function createDatabase(): Promise<SqliteDatabase> {
   tempDir = await mkdtemp(join(tmpdir(), "tapir-storage-"));
   db = await openTapirDatabase(join(tempDir, "tapir.sqlite"));
   return db;
+}
+
+function historyInput(
+  workspaceId: string,
+  serverInstanceId: string | null,
+  requestDraftId: string | null,
+  requestMethod: "GET" | "POST",
+  requestUrl: string,
+  responseStatus: number
+) {
+  return {
+    workspaceId, serverInstanceId, operationId: null, requestDraftId,
+    requestSnapshotJson: JSON.stringify({ method: requestMethod, url: requestUrl, headers: {} }),
+    requestMethod, requestUrl, draftName: null, responseStatus, responseHeadersJson: "{}", responseBody: "", durationMs: 1
+  };
 }
