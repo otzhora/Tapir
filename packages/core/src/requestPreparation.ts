@@ -28,7 +28,7 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
     if (parameter.required && !value) {
       validationIssues.push({ field: parameter.name, message: `${parameter.name} is required.` });
     }
-    path = path.replaceAll(`{${parameter.name}}`, encodeURIComponent(value));
+    path = path.replaceAll(`{${parameter.name}}`, serializePathParameter(parameter, value));
   }
   if (/{[^}]+}/.test(path)) {
     validationIssues.push({ field: "path", message: "The request path still has unresolved parameters." });
@@ -41,7 +41,7 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
     if (parameter.required && !value) {
       validationIssues.push({ field: parameter.name, message: `${parameter.name} is required.` });
     }
-    appendQueryValues(url, parameter.name, value);
+    appendOperationQueryValue(url, parameter, value);
   }
 
   const headers: Record<string, string> = {};
@@ -50,8 +50,18 @@ export function prepareOperationRequest(baseUrl: string, input: PrepareOperation
     if (parameter.required && !value) {
       validationIssues.push({ field: parameter.name, message: `${parameter.name} is required.` });
     }
-    if (value) headers[parameter.name] = value;
+    if (value) headers[parameter.name] = serializeHeaderValue(parameter, value);
   }
+  const cookieValues = input.operation.parameters
+    .filter((parameter) => parameter.in === "cookie")
+    .flatMap((parameter) => {
+      const value = resolve(input.values[parameter.name]?.trim() ?? "", parameter.name);
+      if (parameter.required && !value) {
+        validationIssues.push({ field: parameter.name, message: `${parameter.name} is required.` });
+      }
+      return serializeCookieValues(parameter, value);
+    });
+  if (cookieValues.length > 0) headers.cookie = cookieValues.join("; ");
   const apiKeyHeaderName = input.apiKeyHeaderName ? resolve(input.apiKeyHeaderName.trim(), "apiKeyHeaderName") : undefined;
   const apiKeyValue = resolve(input.apiKeyValue ?? "", "apiKeyValue");
   if (apiKeyHeaderName && apiKeyValue) {
@@ -116,6 +126,14 @@ export function prepareCustomRequest(input: PrepareCustomRequestInput): Prepared
     const name = resolve(parameter.name.trim(), parameter.name || "header");
     if (name) headers[name] = resolve(parameter.value, name);
   }
+  const cookieValues = input.parameters
+    .filter((parameter) => parameter.enabled && parameter.in === "cookie")
+    .flatMap((parameter) => {
+      const name = resolve(parameter.name.trim(), parameter.name || "cookie");
+      const value = resolve(parameter.value, name || "cookie");
+      return name && value ? [`${name}=${encodeURIComponent(value)}`] : [];
+    });
+  if (cookieValues.length > 0) headers.cookie = cookieValues.join("; ");
 
   const body = input.method === "GET" || input.method === "HEAD" ? undefined : input.body;
   const contentType = input.contentType?.trim() || "application/json";
@@ -146,6 +164,66 @@ function appendQueryValues(url: URL, name: string, value: string): void {
   for (const item of value.split(",").map((part) => part.trim()).filter(Boolean)) {
     url.searchParams.append(name, item);
   }
+}
+
+function appendOperationQueryValue(
+  url: URL,
+  parameter: NormalizedOperation["parameters"][number],
+  value: string
+): void {
+  if (!value) return;
+  const items = parameterIsArray(parameter) ? splitArrayInput(value) : [value];
+  if (parameter.style === "spaceDelimited") {
+    url.searchParams.append(parameter.name, items.join(" "));
+    return;
+  }
+  if (parameter.style === "pipeDelimited") {
+    url.searchParams.append(parameter.name, items.join("|"));
+    return;
+  }
+  if (parameterIsArray(parameter) && parameter.explode !== false) {
+    for (const item of items) url.searchParams.append(parameter.name, item);
+    return;
+  }
+  url.searchParams.append(parameter.name, items.join(","));
+}
+
+function serializePathParameter(parameter: NormalizedOperation["parameters"][number], value: string): string {
+  const values = parameterIsArray(parameter) ? splitArrayInput(value) : [value];
+  const encoded = values.map(encodeURIComponent);
+  if (parameter.style === "label") return `.${encoded.join(parameter.explode ? "." : ",")}`;
+  if (parameter.style === "matrix") {
+    return parameter.explode
+      ? encoded.map((item) => `;${encodeURIComponent(parameter.name)}=${item}`).join("")
+      : `;${encodeURIComponent(parameter.name)}=${encoded.join(",")}`;
+  }
+  return encoded.join(",");
+}
+
+function serializeHeaderValue(parameter: NormalizedOperation["parameters"][number], value: string): string {
+  return parameterIsArray(parameter) ? splitArrayInput(value).join(",") : value;
+}
+
+function serializeCookieValues(parameter: NormalizedOperation["parameters"][number], value: string): string[] {
+  if (!value) return [];
+  const values = parameterIsArray(parameter) ? splitArrayInput(value) : [value];
+  if (parameterIsArray(parameter)) {
+    const encodedName = encodeURIComponent(parameter.name);
+    const encodedValues = values.map(encodeURIComponent);
+    return parameter.explode === false
+      ? [`${encodedName}=${encodedValues.join(",")}`]
+      : [`${encodedName}=${encodedValues.join(`&${encodedName}=`)}`];
+  }
+  return [`${encodeURIComponent(parameter.name)}=${encodeURIComponent(value)}`];
+}
+
+function parameterIsArray(parameter: NormalizedOperation["parameters"][number]): boolean {
+  return !!parameter.schema && typeof parameter.schema === "object" && !Array.isArray(parameter.schema)
+    && "type" in parameter.schema && parameter.schema.type === "array";
+}
+
+function splitArrayInput(value: string): string[] {
+  return value.split(",").map((part) => part.trim()).filter(Boolean);
 }
 
 function createUrl(path: string, baseUrl: string, validationIssues: PreparedRequestValidationIssue[]): URL {

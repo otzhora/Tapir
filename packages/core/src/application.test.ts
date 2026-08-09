@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prepareOperationRequest } from "./requestPreparation.js";
+import { prepareCustomRequest, prepareOperationRequest } from "./requestPreparation.js";
 import type { NormalizedOperation } from "./index.js";
 
 const operation: NormalizedOperation = {
@@ -9,8 +9,10 @@ const operation: NormalizedOperation = {
   tags: ["Pets"],
   parameters: [
     { name: "petId", in: "path", required: true },
-    { name: "include", in: "query", required: false },
-    { name: "x-trace-id", in: "header", required: false }
+    { name: "include", in: "query", required: false, style: "form", explode: true, schema: { type: "array", items: { type: "string" } } },
+    { name: "filter", in: "query", required: false, style: "form", explode: true, schema: { type: "string" } },
+    { name: "x-trace-id", in: "header", required: false },
+    { name: "session", in: "cookie", required: false }
   ],
   requestBodyMediaTypes: [{ mediaType: "application/json", schema: { type: "object" } }],
   securityRequirements: [{ apiKey: [] }],
@@ -21,7 +23,7 @@ describe("prepareOperationRequest", () => {
   it("builds a redacted request preview with repeated query values", () => {
     const prepared = prepareOperationRequest("https://api.example.test", {
       operation,
-      values: { petId: "pet 1", include: "owner, visits", "x-trace-id": "trace-1" },
+      values: { petId: "pet 1", include: "owner, visits", filter: "active,new", "x-trace-id": "trace-1", session: "abc 123" },
       body: "{\"name\":\"Momo\"}",
       contentType: "application/json",
       apiKeyHeaderName: "x-api-key",
@@ -31,15 +33,38 @@ describe("prepareOperationRequest", () => {
     expect(prepared.validationIssues).toEqual([]);
     expect(prepared.request).toMatchObject({
       method: "POST",
-      url: "https://api.example.test/pets/pet%201?include=owner&include=visits",
+      url: "https://api.example.test/pets/pet%201?include=owner&include=visits&filter=active%2Cnew",
       headers: {
         "content-type": "application/json",
+        cookie: "session=abc%20123",
         "x-api-key": "secret",
         "x-trace-id": "trace-1"
       },
       body: "{\"name\":\"Momo\"}"
     });
     expect(prepared.redactedRequest.headers["x-api-key"]).toBe("********");
+  });
+
+  it("supports OpenAPI array styles without splitting scalar commas", () => {
+    const prepared = prepareOperationRequest("https://api.example.test", {
+      operation: {
+        ...operation,
+        method: "GET",
+        path: "/pets/{petId}/{coordinates}",
+        parameters: [
+          { name: "petId", in: "path", required: true },
+          { name: "coordinates", in: "path", required: true, style: "label", explode: true, schema: { type: "array" } },
+          { name: "status", in: "query", required: false, style: "pipeDelimited", schema: { type: "array" } },
+          { name: "flags", in: "cookie", required: false, style: "form", explode: false, schema: { type: "array" } }
+        ]
+      },
+      values: { petId: "a,b", coordinates: "10, 20", status: "new, active", flags: "one, two" }
+    });
+
+    expect(prepared.request).toMatchObject({
+      url: "https://api.example.test/pets/a%2Cb/.10.20?status=new%7Cactive",
+      headers: { cookie: "flags=one,two" }
+    });
   });
 
   it("resolves Postman-style server variables outside request bodies", () => {
@@ -97,6 +122,19 @@ describe("prepareOperationRequest", () => {
       { field: "petId", message: "petId is required." },
       { field: "body", message: "Request body must be valid JSON for the selected content type." }
     ]);
+  });
+});
+
+describe("prepareCustomRequest", () => {
+  it("writes custom cookie parameters to the Cookie header", () => {
+    const prepared = prepareCustomRequest({
+      method: "GET",
+      url: "https://api.example.test/pets",
+      parameters: [{ id: "cookie:session", name: "session", in: "cookie", value: "abc 123", enabled: true, source: "custom" }],
+      headers: []
+    });
+
+    expect(prepared.request.headers.cookie).toBe("session=abc%20123");
   });
 });
 

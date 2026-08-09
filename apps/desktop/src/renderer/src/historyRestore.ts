@@ -32,12 +32,16 @@ export function restoreRequestInputs(
   const parameterValues: Record<string, string> = {};
   if (url) {
     Object.assign(parameterValues, restorePathValues(operation, url));
+    const cookies = parseCookies(request.headers.cookie ?? request.headers.Cookie);
     for (const parameter of operation.parameters) {
       if (parameter.in === "query") {
         parameterValues[parameter.name] = url.searchParams.getAll(parameter.name).join(", ");
       }
       if (parameter.in === "header" && request.headers[parameter.name]) {
         parameterValues[parameter.name] = request.headers[parameter.name];
+      }
+      if (parameter.in === "cookie" && cookies[parameter.name]) {
+        parameterValues[parameter.name] = cookies[parameter.name];
       }
     }
   }
@@ -46,6 +50,19 @@ export function restoreRequestInputs(
     bodyValue: request.body ?? "",
     contentType: request.headers["content-type"] ?? fallbackContentType
   };
+}
+
+function parseCookies(value: string | undefined): Record<string, string> {
+  if (!value) return {};
+  const cookies: Record<string, string> = {};
+  for (const part of value.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 0) continue;
+    const name = decodeURIComponent(part.slice(0, separator).trim());
+    const rawValue = part.slice(separator + 1).trim();
+    cookies[name] = decodeURIComponent(rawValue);
+  }
+  return cookies;
 }
 
 function restorePathValues(operation: NormalizedOperation, url: URL): Record<string, string> {

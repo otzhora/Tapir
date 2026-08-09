@@ -44,9 +44,29 @@ describe("BasicOpenApiNormalizer", () => {
       ]
     });
     expect(normalized.operations[0]?.parameters).toEqual([
-      { name: "tenantId", in: "path", required: true, schema: { type: "string" } },
-      { name: "cursor", in: "query", required: false, schema: { type: "string" } },
-      { name: "x-trace-id", in: "header", required: false, schema: { type: "string" } }
+      { name: "tenantId", in: "path", required: true, style: "simple", explode: false, allowReserved: false, schema: { type: "string" } },
+      { name: "cursor", in: "query", required: false, style: "form", explode: true, allowReserved: false, schema: { type: "string" } },
+      { name: "x-trace-id", in: "header", required: false, style: "simple", explode: false, allowReserved: false, schema: { type: "string" } }
+    ]);
+  });
+
+  it("lets operation-level parameters override matching path-level parameters", () => {
+    const normalized = new BasicOpenApiNormalizer().normalize({
+      openapi: "3.0.3",
+      info: { title: "Search API", version: "1" },
+      paths: {
+        "/search": {
+          parameters: [{ name: "tags", in: "query", description: "path default", schema: { type: "string" } }],
+          get: {
+            parameters: [{ name: "tags", in: "query", description: "operation override", explode: false, schema: { type: "array", items: { type: "string" } } }],
+            responses: { "200": { description: "OK" } }
+          }
+        }
+      }
+    });
+
+    expect(normalized.operations[0]?.parameters).toEqual([
+      expect.objectContaining({ name: "tags", in: "query", description: "operation override", explode: false })
     ]);
   });
 

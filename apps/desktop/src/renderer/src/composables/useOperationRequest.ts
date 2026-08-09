@@ -343,7 +343,9 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     }
     const parameters = parseParameters(draft).filter((parameter) => parameter.enabled);
     const operation = plainOperation(input.selectedOperation.value);
+    const normalizedParameters = new Map(operation.parameters.map((parameter) => [`${parameter.in}:${parameter.name}`, parameter]));
     operation.parameters = parameters.map((parameter) => ({
+      ...normalizedParameters.get(parameter.id),
       name: parameter.name,
       in: parameter.in,
       required: parameter.required ?? false,
@@ -483,7 +485,7 @@ function parameterFromOperation(parameter: NormalizedOperation["parameters"][num
   return {
     id: `${parameter.in}:${parameter.name}`,
     name: parameter.name,
-    in: parameter.in === "cookie" ? "header" : parameter.in,
+    in: parameter.in,
     value: "",
     enabled: true,
     required: parameter.required,

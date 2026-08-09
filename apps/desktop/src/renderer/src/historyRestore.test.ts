@@ -3,11 +3,11 @@ import type { NormalizedOperation } from "@tapir/core";
 import { parseHeaders, parseRequestSnapshot, restoreRequestInputs } from "./historyRestore";
 
 describe("history restore helpers", () => {
-  it("restores path, query, header, body, and content type values for the request UI", () => {
+  it("restores path, query, header, cookie, body, and content type values for the request UI", () => {
     const restored = restoreRequestInputs(operation, {
       method: "POST",
       url: "https://api.example.test/pets/pet%201?include=owner&include=visits",
-      headers: { "content-type": "application/json", "x-trace-id": "trace-1" },
+      headers: { "content-type": "application/json", "x-trace-id": "trace-1", cookie: "session=abc%20123" },
       body: "{\"name\":\"Momo\"}"
     }, "text/plain");
 
@@ -15,6 +15,7 @@ describe("history restore helpers", () => {
       parameterValues: {
         petId: "pet 1",
         include: "owner, visits",
+        session: "abc 123",
         "x-trace-id": "trace-1"
       },
       bodyValue: "{\"name\":\"Momo\"}",
@@ -36,7 +37,8 @@ const operation: NormalizedOperation = {
   parameters: [
     { name: "petId", in: "path", required: true },
     { name: "include", in: "query", required: false },
-    { name: "x-trace-id", in: "header", required: false }
+    { name: "x-trace-id", in: "header", required: false },
+    { name: "session", in: "cookie", required: false }
   ],
   requestBodyMediaTypes: [{ mediaType: "application/json" }],
   securityRequirements: [],

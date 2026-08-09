@@ -60,10 +60,10 @@ function normalizeOperation(input: {
   rootSecurity: Array<Record<string, string[]>>;
   securitySchemes: NormalizedSecurityScheme[];
 }): NormalizedOperation {
-  const operationParameters = [
-    ...input.pathParameters,
-    ...normalizeParameters(input.document, input.operation.parameters)
-  ];
+  const operationParameters = mergeParameters(
+    input.pathParameters,
+    normalizeParameters(input.document, input.operation.parameters)
+  );
   const operationId = typeof input.operation.operationId === "string"
     ? input.operation.operationId
     : `${input.method.toUpperCase()} ${input.path}`;
@@ -105,9 +105,34 @@ function normalizeParameters(root: unknown, value: unknown): NormalizedParameter
       in: parameter.in as NormalizedParameter["in"],
       required: parameter.required === true || parameter.in === "path",
       description: typeof parameter.description === "string" ? parameter.description : undefined,
+      style: normalizeParameterStyle(parameter.style, parameter.in),
+      explode: typeof parameter.explode === "boolean" ? parameter.explode : defaultExplode(parameter.style, parameter.in),
+      allowReserved: parameter.allowReserved === true,
       schema: resolveRefsInValue(root, parameter.schema)
     }];
   });
+}
+
+function mergeParameters(pathParameters: NormalizedParameter[], operationParameters: NormalizedParameter[]): NormalizedParameter[] {
+  const operationKeys = new Set(operationParameters.map(parameterKey));
+  return [
+    ...pathParameters.filter((parameter) => !operationKeys.has(parameterKey(parameter))),
+    ...operationParameters
+  ];
+}
+
+function parameterKey(parameter: NormalizedParameter): string {
+  return `${parameter.in}:${parameter.name}`;
+}
+
+function normalizeParameterStyle(value: unknown, location: string): NormalizedParameter["style"] {
+  const supported = ["matrix", "label", "form", "simple", "spaceDelimited", "pipeDelimited", "deepObject"];
+  if (typeof value === "string" && supported.includes(value)) return value as NormalizedParameter["style"];
+  return location === "query" || location === "cookie" ? "form" : "simple";
+}
+
+function defaultExplode(style: unknown, location: string): boolean {
+  return normalizeParameterStyle(style, location) === "form";
 }
 
 function normalizeServers(value: unknown): string[] {

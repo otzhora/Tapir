@@ -44,6 +44,9 @@ export interface NormalizedParameter {
   in: "path" | "query" | "header" | "cookie";
   required: boolean;
   description?: string;
+  style?: "matrix" | "label" | "form" | "simple" | "spaceDelimited" | "pipeDelimited" | "deepObject";
+  explode?: boolean;
+  allowReserved?: boolean;
   schema?: unknown;
 }
 
@@ -137,7 +140,7 @@ export type RequestDraftSourceType = "openapi" | "custom";
 export interface RequestDraftParameter {
   id: string;
   name: string;
-  in: "path" | "query" | "header";
+  in: "path" | "query" | "header" | "cookie";
   value: string;
   enabled: boolean;
   required?: boolean;

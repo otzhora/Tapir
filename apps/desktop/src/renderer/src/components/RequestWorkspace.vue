@@ -179,6 +179,7 @@ function isJsonMediaType(value: string): boolean {
             <div class="flex justify-end gap-2">
               <button class="mini-button" @click="emit('addParameter', 'query')"><Plus :size="15" /> Query</button>
               <button class="mini-button" @click="emit('addParameter', 'header')"><Plus :size="15" /> Header</button>
+              <button class="mini-button" @click="emit('addParameter', 'cookie')"><Plus :size="15" /> Cookie</button>
             </div>
             <div class="request-param-grid">
               <div class="table-head">On</div>
