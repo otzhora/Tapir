@@ -2,7 +2,22 @@
 
 ASP.NET Core fixture for testing Tapir against a realistic Swashbuckle-generated OpenAPI document.
 
-`GET /auth/api-key` requires `x-api-key: tapir-dotnet-secret`. Override it with `TAPIR_FIXTURE_API_KEY`.
+The fixture includes live endpoints for every authentication shape Tapir supports:
+
+| Endpoint | OpenAPI security | Default credential |
+| --- | --- | --- |
+| `GET /auth/api-key` | Header API key | `x-api-key: tapir-dotnet-secret` |
+| `GET /auth/bearer` | HTTP bearer | `Bearer tapir-dotnet-token` |
+| `GET /auth/basic` | HTTP basic | `tapir` / `tapir-dotnet-password` |
+| `GET /auth/query-api-key` | Query API key | `api_key=tapir-dotnet-query-secret` |
+| `GET /auth/cookie-api-key` | Cookie API key | `tapir_session=tapir-dotnet-session` |
+| `GET /auth/alternative` | Header API key OR bearer | Either corresponding credential |
+| `GET /auth/combined` | Header API key AND basic | Both corresponding credentials |
+| `GET /auth/optional` | Anonymous OR bearer | No credential required |
+
+Override the defaults with `TAPIR_FIXTURE_API_KEY`, `TAPIR_FIXTURE_BEARER_TOKEN`,
+`TAPIR_FIXTURE_USERNAME`, `TAPIR_FIXTURE_PASSWORD`, `TAPIR_FIXTURE_QUERY_API_KEY`, and
+`TAPIR_FIXTURE_COOKIE_API_KEY`.
 
 The API uses typed minimal endpoints so the emitted schema includes framework-generated shapes for
 nested records, enums, arrays, dictionaries, nullable values, validation attributes, typed request

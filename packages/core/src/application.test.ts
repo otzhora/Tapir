@@ -259,6 +259,16 @@ describe("prepareCustomRequest", () => {
 
     expect(prepared.request.headers.cookie).toBe("session=abc%20123");
   });
+  it("preserves commas in scalar custom query values", () => {
+    const prepared = prepareCustomRequest({
+      method: "GET",
+      url: "https://api.example.test/pets",
+      parameters: [{ id: "query:filter", name: "filter", in: "query", value: "active,new", enabled: true, source: "custom" }],
+      headers: []
+    });
+
+    expect(prepared.request.url).toBe("https://api.example.test/pets?filter=active%2Cnew");
+  });
 });
 
 function serverVariable(key: string, value: string) {

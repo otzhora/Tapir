@@ -1,5 +1,6 @@
-import { cp, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { appendFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -7,28 +8,37 @@ import { npmCommand } from "./npm-command.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const artifactsDir = join(root, "artifacts");
-const packageName = "Tapir-win32-x64";
+const rootPackage = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+const version = rootPackage.version;
+if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
+  throw new Error(`The root package.json has an invalid release version: ${String(version)}`);
+}
+const packageName = `Tapir-${version}-win32-x64`;
 const outputDir = join(artifactsDir, packageName);
 const zipPath = join(artifactsDir, `${packageName}.zip`);
 const logPath = join(artifactsDir, "package-windows.log");
+const manifestPath = join(artifactsDir, "release-manifest.json");
+const checksumsPath = join(artifactsDir, "SHA256SUMS.txt");
 
 await mkdir(artifactsDir, { recursive: true });
 await writeFile(logPath, `Tapir Windows packaging started ${new Date().toISOString()}\n`, "utf8");
+await rm(outputDir, { recursive: true, force: true });
+await rm(zipPath, { force: true });
+await rm(manifestPath, { force: true });
+await rm(checksumsPath, { force: true });
 
 try {
   if (process.platform !== "win32") throw new Error("Tapir's Windows packaging command must run on Windows.");
   runNpm(["--workspace", "@tapir/desktop", "run", "build"]);
   runNpm(["run", "rebuild:native:electron"]);
 
-  await rm(outputDir, { recursive: true, force: true });
-  await rm(zipPath, { force: true });
   await cp(join(root, "node_modules", "electron", "dist"), outputDir, { recursive: true });
   await mkdir(join(outputDir, "resources", "app", "node_modules"), { recursive: true });
   await cp(join(root, "apps", "desktop", "out"), join(outputDir, "resources", "app", "out"), { recursive: true });
   await cp(join(root, "node_modules", "better-sqlite3"), join(outputDir, "resources", "app", "node_modules", "better-sqlite3"), { recursive: true });
   await writeFile(join(outputDir, "resources", "app", "package.json"), JSON.stringify({
     name: "tapir",
-    version: "0.1.0",
+    version,
     private: true,
     type: "module",
     main: "out/main/index.js"
@@ -43,8 +53,25 @@ try {
   await rename(join(outputDir, "electron.exe"), join(outputDir, "Tapir.exe"));
 
   run("tar.exe", ["-a", "-c", "-f", zipPath, "-C", artifactsDir, packageName]);
-  await log(`Portable directory: ${outputDir}\nZip artifact: ${zipPath}\nTapir Windows packaging completed ${new Date().toISOString()}\n`);
-  console.log(`Tapir Windows artifacts created:\n${outputDir}\n${zipPath}`);
+  const sha256 = createHash("sha256").update(await readFile(zipPath)).digest("hex");
+  const sourceRevision = gitOutput(["rev-parse", "HEAD"]);
+  const sourceDirty = gitOutput(["status", "--short"]).length > 0;
+  const manifest = {
+    schemaVersion: 1,
+    product: "Tapir",
+    version,
+    platform: "win32",
+    architecture: "x64",
+    archive: `${packageName}.zip`,
+    sha256,
+    sourceRevision,
+    sourceDirty,
+    createdAt: new Date().toISOString()
+  };
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await writeFile(checksumsPath, `${sha256}  ${packageName}.zip\n`, "utf8");
+  await log(`Portable directory: ${outputDir}\nZip artifact: ${zipPath}\nSHA-256: ${sha256}\nManifest: ${manifestPath}\nTapir Windows packaging completed ${new Date().toISOString()}\n`);
+  console.log(`Tapir Windows artifacts created:\n${outputDir}\n${zipPath}\n${manifestPath}`);
 } catch (error) {
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
   await log(`PACKAGING FAILED\n${message}\n`);
@@ -65,6 +92,12 @@ function run(command, args) {
     log(`> ${command} ${args.join(" ")}\n${output}\n`);
   }
   if (result.status !== 0) throw new Error(`${command} failed with exit code ${result.status ?? "unknown"}.`);
+}
+
+function gitOutput(args) {
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8", shell: false, windowsHide: true });
+  if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr ?? "unknown error"}`);
+  return result.stdout.trim();
 }
 
 function log(value) {

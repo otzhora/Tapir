@@ -8,6 +8,19 @@ afterEach(() => {
 });
 
 describe("FetchOpenApiDiscoveryService external references", () => {
+  it("tries specification paths below the supplied API base path before the origin", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => String(input) === "https://api.example.test/v3/openapi.json"
+      ? jsonResponse({ openapi: "3.0.3", info: { title: "Nested API", version: "1" }, paths: {} })
+      : new Response("missing", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const discovered = await new FetchOpenApiDiscoveryService().discover("https://api.example.test/v3");
+
+    expect(discovered.specUrl).toBe("https://api.example.test/v3/openapi.json");
+    expect(discovered.discoveryMethod).toBe("/v3/openapi.json");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("resolves same-origin external references and their local fragments", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
@@ -42,6 +55,38 @@ describe("FetchOpenApiDiscoveryService external references", () => {
       mediaType: "application/json",
       required: true,
       schema: { type: "object", required: ["name"], properties: { name: { type: "string" } } }
+    });
+  });
+
+  it("resolves external references nested behind root-local components without expanding the local graph", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => String(input).endsWith("openapi.json")
+      ? jsonResponse({
+          openapi: "3.1.0",
+          info: { title: "Nested External API", version: "1" },
+          paths: {
+            "/pets": {
+              post: {
+                requestBody: { $ref: "#/components/requestBodies/PetBody" },
+                responses: { "200": { description: "OK" } }
+              }
+            }
+          },
+          components: {
+            requestBodies: {
+              PetBody: { content: { "application/json": { schema: { $ref: "./schemas.json#/Pet" } } } }
+            }
+          }
+        })
+      : jsonResponse({ Pet: { type: "object", required: ["name"], properties: { name: { type: "string" } } } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const discovered = await new FetchOpenApiDiscoveryService().fetch("https://api.example.test/openapi.json");
+    const normalized = new BasicOpenApiNormalizer().normalize(discovered.document);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(normalized.operations[0]?.requestBodySchema).toMatchObject({
+      type: "object",
+      required: ["name"]
     });
   });
 
@@ -86,9 +131,32 @@ describe("FetchOpenApiDiscoveryService external references", () => {
     await expect(new FetchOpenApiDiscoveryService().fetch("https://api.example.test/openapi.json")).rejects.toThrow("External OpenAPI reference exceeds Tapir's 2 MB limit");
   });
 
+  it("accepts root documents up to 20 MB and rejects larger ones", async () => {
+    const document = { openapi: "3.1.0", info: { title: "Large API", version: "1" }, paths: {} };
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(document)));
+    await expect(new FetchOpenApiDiscoveryService().fetch("https://api.example.test/openapi.json")).resolves.toMatchObject({ document });
+
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", {
+      status: 200,
+      headers: { "content-length": String(20 * 1024 * 1024 + 1) }
+    })));
+    await expect(new FetchOpenApiDiscoveryService().fetch("https://api.example.test/openapi.json"))
+      .rejects.toThrow("OpenAPI document exceeds Tapir's 20 MB limit");
+  });
+
+  it("reports YAML and malformed documents as unsupported JSON input", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("openapi: 3.1.0\npaths: {}", { status: 200 })));
+
+    await expect(new FetchOpenApiDiscoveryService().fetch("https://api.example.test/openapi.yaml"))
+      .rejects.toThrow("Tapir currently supports JSON documents only");
+  });
+
   it("enforces reference depth and document-count limits", async () => {
-    const localChain = { first: { $ref: "#/second" }, second: { $ref: "#/third" }, third: { $ref: "#/fourth" }, fourth: { type: "string" } };
-    await expect(resolveExternalReferences(localChain, "https://api.example.test/openapi.json", async () => ({}), {
+    const externalChain = { $ref: "./1.json#/value" };
+    await expect(resolveExternalReferences(externalChain, "https://api.example.test/openapi.json", async (url) => {
+      const index = Number(new URL(url).pathname.match(/\/(\d+)\.json$/)?.[1]);
+      return { value: { $ref: `./${index + 1}.json#/value` } };
+    }, {
       maxDepth: 2,
       maxDocuments: 16,
       requireSameOrigin: true

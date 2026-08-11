@@ -38,6 +38,7 @@ export interface InitialStateResponse {
 
 export interface AddServerRequest {
   baseUrl: string;
+  specUrl?: string;
 }
 
 export interface AddServerResponse {

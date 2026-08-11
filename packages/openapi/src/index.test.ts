@@ -3,6 +3,57 @@ import { readFileSync } from "node:fs";
 import { BasicOpenApiNormalizer } from "./index.js";
 
 describe("BasicOpenApiNormalizer", () => {
+  it("terminates cached local-reference cycles", () => {
+    const normalized = new BasicOpenApiNormalizer().normalize({
+      openapi: "3.1.0",
+      info: { title: "Cyclic API", version: "1" },
+      paths: {
+        "/nodes": {
+          post: {
+            requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/Node" } } } },
+            responses: { "200": { description: "OK" } }
+          }
+        }
+      },
+      components: {
+        schemas: {
+          Node: { type: "object", properties: { child: { $ref: "#/components/schemas/Node" } } }
+        }
+      }
+    });
+
+    expect(JSON.stringify(normalized.operations[0]?.requestBodySchema)).toContain("#/components/schemas/Node");
+  });
+
+  it("keeps nested response schemas referenced instead of expanding the full component graph", () => {
+    const normalized = new BasicOpenApiNormalizer().normalize({
+      openapi: "3.1.0",
+      info: { title: "Response API", version: "1" },
+      paths: {
+        "/nodes": {
+          get: {
+            responses: {
+              "200": {
+                description: "OK",
+                content: { "application/json": { schema: { $ref: "#/components/schemas/Node" } } }
+              }
+            }
+          }
+        }
+      },
+      components: {
+        schemas: { Node: { type: "object", properties: { child: { $ref: "#/components/schemas/Node" } } } }
+      }
+    });
+
+    expect(normalized.operations[0]?.responses).toEqual({
+      "200": {
+        description: "OK",
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Node" } } }
+      }
+    });
+  });
+
   it("normalizes the OpenAPI 3.0 and 3.1 compatibility fixtures and rejects the Swagger fixture", () => {
     const normalizer = new BasicOpenApiNormalizer();
     const fixture = (name: string) => JSON.parse(readFileSync(new URL(`../test-fixtures/${name}`, import.meta.url), "utf8")) as unknown;

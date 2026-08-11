@@ -1,28 +1,45 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { appendFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import net from "node:net";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const artifactsDir = join(root, "artifacts");
-const zipPath = join(artifactsDir, "Tapir-win32-x64.zip");
+const manifestPath = join(artifactsDir, "release-manifest.json");
 const logPath = join(artifactsDir, "smoke-packaged-windows.log");
-const port = await availablePort();
-const fixtureUrl = `http://127.0.0.1:${port}`;
-const tempDir = await mkdtemp(join(tmpdir(), "tapir-packaged-smoke-"));
-const reportPath = join(tempDir, "report.json");
-const profilePath = join(tempDir, "profile");
-const extractedRoot = join(tempDir, "Tapir-win32-x64");
-const executable = join(extractedRoot, "Tapir.exe");
+let tempDir;
 let fixture;
 let fixtureOutput = "";
 
 await writeFile(logPath, `Tapir packaged smoke test started ${new Date().toISOString()}\n`, "utf8");
 try {
   if (process.platform !== "win32") throw new Error("Tapir's packaged smoke test must run on Windows.");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (
+    manifest.schemaVersion !== 1
+    || typeof manifest.version !== "string"
+    || typeof manifest.sha256 !== "string"
+    || !/^[a-f0-9]{64}$/.test(manifest.sha256)
+    || typeof manifest.archive !== "string"
+    || !manifest.archive.endsWith(".zip")
+    || manifest.archive !== basename(manifest.archive)
+  ) {
+    throw new Error(`Invalid release manifest at ${manifestPath}.`);
+  }
+  const zipPath = join(artifactsDir, manifest.archive);
+  const port = await availablePort();
+  const fixtureUrl = `http://127.0.0.1:${port}`;
+  tempDir = await mkdtemp(join(tmpdir(), "tapir-packaged-smoke-"));
+  const reportPath = join(tempDir, "report.json");
+  const profilePath = join(tempDir, "profile");
+  const extractedRoot = join(tempDir, manifest.archive.replace(/\.zip$/i, ""));
+  const executable = join(extractedRoot, "Tapir.exe");
+  const archiveSha256 = createHash("sha256").update(await readFile(zipPath)).digest("hex");
+  if (archiveSha256 !== manifest.sha256) throw new Error(`Packaged ZIP checksum mismatch: expected ${manifest.sha256}, received ${archiveSha256}.`);
   const extraction = spawnSync("tar.exe", ["-xf", zipPath, "-C", tempDir], { cwd: root, encoding: "utf8", shell: false, windowsHide: true });
   await log(`[ZIP extraction]\n${extraction.stdout ?? ""}${extraction.stderr ?? ""}\n`);
   if (extraction.error) throw extraction.error;
@@ -57,6 +74,7 @@ try {
 
   const report = JSON.parse(await readFile(reportPath, "utf8"));
   if (report.ok !== true || report.isPackaged !== true) throw new Error(`Packaged smoke report indicates failure: ${JSON.stringify(report)}`);
+  if (report.appVersion !== manifest.version) throw new Error(`Packaged version ${report.appVersion} does not match manifest version ${manifest.version}.`);
   if (report.databaseExists !== true) throw new Error("Packaged Tapir did not create its SQLite database.");
   if (report.rendererLoaded !== true) throw new Error(`Packaged renderer did not load from the artifact: ${report.rendererUrl}`);
   if (report.responseStatus !== 200 || report.historyCount < 1) throw new Error(`Packaged request/history verification failed: ${JSON.stringify(report)}`);
@@ -71,7 +89,7 @@ try {
   process.exitCode = 1;
 } finally {
   fixture?.kill();
-  await rm(tempDir, { recursive: true, force: true });
+  if (tempDir) await rm(tempDir, { recursive: true, force: true });
 }
 
 async function waitForFixture(url) {

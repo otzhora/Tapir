@@ -114,10 +114,15 @@ function normalizeOperation(input: {
     parameters: operationParameters,
     requestBodySchema: requestBodyMediaTypes[0]?.schema,
     requestBodyMediaTypes,
-    responses: isRecord(input.operation.responses) ? resolveRefsInValue(input.document, input.operation.responses) : undefined,
+    responses: normalizeResponses(input.document, input.operation.responses),
     securityRequirements,
     securitySchemes: input.securitySchemes.filter((scheme) => securityRequirements.some((requirement) => scheme.key in requirement))
   };
+}
+
+function normalizeResponses(root: unknown, value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) return undefined;
+  return Object.fromEntries(Object.entries(value).map(([status, response]) => [status, resolveRef(root, response)]));
 }
 
 function normalizeParameters(root: unknown, value: unknown, diagnostics: OpenApiDiagnostic[], path: string): NormalizedParameter[] {

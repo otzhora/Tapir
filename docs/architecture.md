@@ -53,7 +53,7 @@ The normalizer accepts OpenAPI 3.0 and 3.1 documents and extracts the data neede
 - security requirements and schemes
 - compatibility diagnostics for unsupported or inconsistent constructs
 
-Local JSON Pointer references are resolved during normalization. Discovery also resolves same-origin HTTP(S) external references before normalization, with per-document and combined size limits, a 15-second fetch timeout, a 16-document limit, a 16-reference depth limit, redirect-origin checks, and circular-reference termination. Cross-origin and non-HTTP(S) references are rejected rather than fetched.
+Local JSON Pointer references are resolved on demand during normalization rather than being expanded across the entire document during discovery. Discovery resolves same-origin HTTP(S) external references with per-document and combined size limits, a 15-second fetch timeout, a 16-document limit, a 16-external-reference depth limit, redirect-origin checks, and circular-reference termination. Cross-origin and non-HTTP(S) references are rejected rather than fetched.
 
 Duplicate source `operationId` values receive deterministic identities derived from the HTTP method and path so draft matching is stable even if document order changes. Swagger 2.0 is rejected with a conversion diagnostic rather than being partially interpreted as OpenAPI 3.
 

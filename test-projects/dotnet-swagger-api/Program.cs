@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi.Models;
@@ -6,6 +7,10 @@ using Microsoft.OpenApi.Models;
 var builder = WebApplication.CreateBuilder(args);
 var fixtureApiKey = builder.Configuration["TAPIR_FIXTURE_API_KEY"] ?? "tapir-dotnet-secret";
 var fixtureBearerToken = builder.Configuration["TAPIR_FIXTURE_BEARER_TOKEN"] ?? "tapir-dotnet-token";
+var fixtureUsername = builder.Configuration["TAPIR_FIXTURE_USERNAME"] ?? "tapir";
+var fixturePassword = builder.Configuration["TAPIR_FIXTURE_PASSWORD"] ?? "tapir-dotnet-password";
+var fixtureQueryApiKey = builder.Configuration["TAPIR_FIXTURE_QUERY_API_KEY"] ?? "tapir-dotnet-query-secret";
+var fixtureCookieApiKey = builder.Configuration["TAPIR_FIXTURE_COOKIE_API_KEY"] ?? "tapir-dotnet-session";
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -45,6 +50,26 @@ builder.Services.AddSwaggerGen(options =>
         In = ParameterLocation.Header,
         Name = "x-api-key",
         Description = "Static API key for fixture clients."
+    });
+    options.AddSecurityDefinition("Basic", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "basic",
+        Description = "HTTP Basic credentials used by the fixture."
+    });
+    options.AddSecurityDefinition("QueryApiKey", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Query,
+        Name = "api_key",
+        Description = "Static API key passed in the query string."
+    });
+    options.AddSecurityDefinition("CookieApiKey", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Cookie,
+        Name = "tapir_session",
+        Description = "Static API key passed in a cookie."
     });
     options.OperationFilter<ApiKeyOperationFilter>();
 });
@@ -119,6 +144,73 @@ app.MapGet("/auth/bearer", ([FromHeader(Name = "Authorization")] string? authori
     .WithDescription("Requires an HTTP bearer token. The local fixture accepts tapir-dotnet-token by default.")
     .Produces<AuthenticatedIdentity>()
     .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
+
+app.MapGet("/auth/basic", ([FromHeader(Name = "Authorization")] string? authorization) =>
+        authorization == $"Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes($"{fixtureUsername}:{fixturePassword}"))}"
+            ? Results.Ok(new AuthenticatedIdentity(true, "basic"))
+            : Results.Json(new ProblemDetails { Title = "Unauthorized", Detail = "Provide the fixture username and password with HTTP Basic authentication.", Status = StatusCodes.Status401Unauthorized }, statusCode: StatusCodes.Status401Unauthorized))
+    .WithName("GetBasicIdentity")
+    .WithTags("System")
+    .WithSummary("Verify basic authentication")
+    .Produces<AuthenticatedIdentity>()
+    .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
+
+app.MapGet("/auth/query-api-key", ([FromQuery(Name = "api_key")] string? apiKey) =>
+        apiKey == fixtureQueryApiKey
+            ? Results.Ok(new AuthenticatedIdentity(true, "queryApiKey"))
+            : Results.Json(new ProblemDetails { Title = "Unauthorized", Detail = "Provide the fixture API key in the api_key query parameter.", Status = StatusCodes.Status401Unauthorized }, statusCode: StatusCodes.Status401Unauthorized))
+    .WithName("GetQueryApiKeyIdentity")
+    .WithTags("System")
+    .WithSummary("Verify a query-string API key")
+    .Produces<AuthenticatedIdentity>()
+    .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
+
+app.MapGet("/auth/cookie-api-key", (HttpRequest request) =>
+        request.Cookies["tapir_session"] == fixtureCookieApiKey
+            ? Results.Ok(new AuthenticatedIdentity(true, "cookieApiKey"))
+            : Results.Json(new ProblemDetails { Title = "Unauthorized", Detail = "Provide the fixture API key in the tapir_session cookie.", Status = StatusCodes.Status401Unauthorized }, statusCode: StatusCodes.Status401Unauthorized))
+    .WithName("GetCookieApiKeyIdentity")
+    .WithTags("System")
+    .WithSummary("Verify a cookie API key")
+    .Produces<AuthenticatedIdentity>()
+    .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
+
+app.MapGet("/auth/alternative", (HttpRequest request, [FromHeader(Name = "x-api-key")] string? apiKey) =>
+    {
+        var apiKeyAccepted = apiKey == fixtureApiKey;
+        var bearerAccepted = request.Headers.Authorization == $"Bearer {fixtureBearerToken}";
+        return apiKeyAccepted || bearerAccepted
+            ? Results.Ok(new AuthenticatedIdentity(true, apiKeyAccepted ? "apiKey" : "bearer"))
+            : Results.Json(new ProblemDetails { Title = "Unauthorized", Detail = "Provide either the fixture API key or bearer token.", Status = StatusCodes.Status401Unauthorized }, statusCode: StatusCodes.Status401Unauthorized);
+    })
+    .WithName("GetAlternativeIdentity")
+    .WithTags("System")
+    .WithSummary("Verify either an API key or bearer token")
+    .Produces<AuthenticatedIdentity>()
+    .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
+
+app.MapGet("/auth/combined", (HttpRequest request, [FromHeader(Name = "x-api-key")] string? apiKey) =>
+    {
+        var basic = $"Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes($"{fixtureUsername}:{fixturePassword}"))}";
+        return apiKey == fixtureApiKey && request.Headers.Authorization == basic
+            ? Results.Ok(new AuthenticatedIdentity(true, "apiKey+basic"))
+            : Results.Json(new ProblemDetails { Title = "Unauthorized", Detail = "Provide both the fixture API key and basic credentials.", Status = StatusCodes.Status401Unauthorized }, statusCode: StatusCodes.Status401Unauthorized);
+    })
+    .WithName("GetCombinedIdentity")
+    .WithTags("System")
+    .WithSummary("Verify an API key and basic authentication together")
+    .Produces<AuthenticatedIdentity>()
+    .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized);
+
+app.MapGet("/auth/optional", ([FromHeader(Name = "Authorization")] string? authorization) =>
+    {
+        var authenticated = authorization == $"Bearer {fixtureBearerToken}";
+        return Results.Ok(new AuthenticatedIdentity(authenticated, authenticated ? "bearer" : "anonymous"));
+    })
+    .WithName("GetOptionalIdentity")
+    .WithTags("System")
+    .WithSummary("Accept anonymous or bearer-authenticated requests")
+    .Produces<AuthenticatedIdentity>();
 
 app.MapGet("/weather", (
         [FromQuery] string? city,
@@ -284,20 +376,28 @@ public sealed class ApiKeyOperationFilter : Swashbuckle.AspNetCore.SwaggerGen.IO
 {
     public void Apply(OpenApiOperation operation, Swashbuckle.AspNetCore.SwaggerGen.OperationFilterContext context)
     {
-        var schemeId = operation.OperationId switch
+        operation.Security = operation.OperationId switch
         {
-            "GetApiKeyIdentity" => "ApiKey",
-            "GetBearerIdentity" => "Bearer",
+            "GetApiKeyIdentity" => [Requirement("ApiKey")],
+            "GetBearerIdentity" => [Requirement("Bearer")],
+            "GetBasicIdentity" => [Requirement("Basic")],
+            "GetQueryApiKeyIdentity" => [Requirement("QueryApiKey")],
+            "GetCookieApiKeyIdentity" => [Requirement("CookieApiKey")],
+            "GetAlternativeIdentity" => [Requirement("ApiKey"), Requirement("Bearer")],
+            "GetCombinedIdentity" => [Requirement("ApiKey", "Basic")],
+            "GetOptionalIdentity" => [new OpenApiSecurityRequirement(), Requirement("Bearer")],
             _ => null
         };
-        if (schemeId is null) return;
-        operation.Security = new List<OpenApiSecurityRequirement>
+    }
+
+    private static OpenApiSecurityRequirement Requirement(params string[] schemeIds)
+    {
+        var requirement = new OpenApiSecurityRequirement();
+        foreach (var schemeId in schemeIds)
         {
-            new()
-            {
-                [new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = schemeId } }] = Array.Empty<string>()
-            }
-        };
+            requirement[new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = schemeId } }] = Array.Empty<string>();
+        }
+        return requirement;
     }
 }
 

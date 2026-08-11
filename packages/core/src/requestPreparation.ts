@@ -214,10 +214,7 @@ function ensureTrailingSlash(value: string): string {
 }
 
 function appendQueryValues(url: URL, name: string, value: string): void {
-  if (!value) return;
-  for (const item of value.split(",").map((part) => part.trim()).filter(Boolean)) {
-    url.searchParams.append(name, item);
-  }
+  if (name && value) url.searchParams.append(name, value);
 }
 
 function appendOperationQueryValue(

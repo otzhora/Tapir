@@ -30,6 +30,7 @@ const emit = defineEmits<{
 }>();
 
 const baseUrl = ref("");
+const specUrl = ref("");
 const errorMessage = ref("");
 const schemaMessage = ref("");
 const isAddingServer = ref(false);
@@ -84,11 +85,15 @@ async function addServer(): Promise<void> {
   if (!tapir) return;
   isAddingServer.value = true;
   try {
-    const result = await tapir.addServer(baseUrl.value);
+    const explicitSpecUrl = specUrl.value.trim();
+    const result = explicitSpecUrl
+      ? await tapir.addServer(baseUrl.value, explicitSpecUrl)
+      : await tapir.addServer(baseUrl.value);
     const server = { server: result.server, definition: result.normalized, variables: [], authentication: [] };
     emit("serverAdded", server);
     emit("selectServer", result.server.id);
     baseUrl.value = "";
+    specUrl.value = "";
   } catch (error) {
     errorMessage.value = toErrorMessage(error);
   } finally {
@@ -149,6 +154,7 @@ function toErrorMessage(error: unknown): string {
             <Plus v-else :size="18" />
           </button>
         </div>
+        <input id="spec-url" v-model="specUrl" :class="fieldClass" aria-label="OpenAPI document URL (optional)" placeholder="Optional OpenAPI document URL" />
       </form>
 
       <p v-if="errorMessage" class="my-2.5 rounded-md border border-[var(--tapir-danger-border)] bg-[var(--tapir-danger-bg)] p-2.5 text-[13px] text-[var(--tapir-danger)]">{{ errorMessage }}</p>

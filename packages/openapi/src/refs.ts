@@ -26,8 +26,11 @@ export function resolveRef(
 ): unknown {
   if (!isRecord(value) || typeof value.$ref !== "string" || !value.$ref.startsWith("#/")) return value;
   const siblings = Object.fromEntries(Object.entries(value).filter(([key]) => key !== "$ref"));
-  if (cache.has(value.$ref)) return mergeRefSiblings(cache.get(value.$ref), siblings);
   if (seen.has(value.$ref)) return value;
+  if (cache.has(value.$ref)) {
+    seen.add(value.$ref);
+    return mergeRefSiblings(cache.get(value.$ref), siblings);
+  }
   seen.add(value.$ref);
   const target = value.$ref
     .slice(2)
@@ -62,6 +65,10 @@ export async function resolveExternalReferences(
     }
     if (!isRecord(value)) return value;
     if (typeof value.$ref === "string") {
+      if (value.$ref.startsWith("#") && withoutHash(baseUrl).toString() === rootUrl.toString()) {
+        const siblings = Object.fromEntries(Object.entries(value).filter(([name]) => name !== "$ref"));
+        return { $ref: value.$ref, ...await visit(siblings, baseUrl, referenceDepth) as Record<string, unknown> };
+      }
       if (referenceDepth >= limits.maxDepth) throw new Error(`OpenAPI reference depth exceeds Tapir's limit of ${limits.maxDepth}: ${value.$ref}`);
       const targetUrl = new URL(value.$ref, baseUrl);
       if (!["http:", "https:"].includes(targetUrl.protocol)) throw new Error(`OpenAPI reference uses unsafe scheme ${targetUrl.protocol}: ${value.$ref}`);

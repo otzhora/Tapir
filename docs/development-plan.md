@@ -82,7 +82,7 @@ Completion evidence:
 - Optional, alternative, and combined security requirements have service-level coverage.
 - Credentials can be replaced and removed from the request UI.
 - Legacy `apiKeyHeader` rows load without rewriting or losing encrypted values.
-- Node and .NET fixtures validate both API-key and bearer endpoints.
+- Node and .NET fixtures validate header/query/cookie API keys, bearer and Basic authentication, and optional, alternative, and combined security requirements.
 - Typechecking, 40 tests, fixture smoke tests, and the production build pass.
 
 ## Phase 3 — Server lifecycle management
@@ -203,7 +203,7 @@ Acceptance criteria:
 Completion evidence:
 
 - Scalar, array, and JSON-object parameters serialize across supported path, query, header, and cookie styles, including nested `deepObject` values and query `allowReserved`; history restoration recreates editable object JSON.
-- Discovery resolves local and same-origin external references with HTTP(S)-only enforcement, redirect-origin checks, 15-second timeouts, 2 MB per-reference and 10 MB aggregate size limits, 16-document and 16-reference-depth limits, cache reuse, and circular-reference termination.
+- Discovery preserves root-document local references for on-demand normalization and resolves same-origin external references with HTTP(S)-only enforcement, redirect-origin checks, 15-second timeouts, 2 MB per-reference and 10 MB aggregate size limits, 16-document and 16-external-reference-depth limits, cache reuse, and circular-reference termination.
 - OpenAPI 3.0 and 3.1 compatibility fixtures pass; JSON Schema `const`, `examples`, type arrays, tuple `prefixItems`, `$ref` siblings, and composed required fields feed request authoring.
 - Duplicate source operation IDs receive deterministic method-and-path identities independent of document order.
 - Swagger 2.0 and unknown versions fail with conversion/support guidance.
@@ -274,6 +274,38 @@ Completion evidence:
 - Direct unit tests cover IPC payload fidelity, malformed persisted arrays, autosave ordering, failed-save recovery, stale save responses, stale preview responses, and history response reconstruction.
 - The existing App behavior tests continue to pass without changing the composable's public API; all boundary payload types continue to come from `@tapir/core` or the preload bridge.
 - Typechecking, 72 tests, fixture smoke tests, a fresh production Windows package build, the extracted-ZIP packaged-app smoke test, and `git diff --check` pass.
+
+## Phase 9 — Alpha readiness and real-work validation
+
+Status: `In progress` on 2026-08-12.
+
+Goal: make Tapir safe to share with a small alpha group and learn from real API work before expanding the product boundary.
+
+Planned scope:
+
+- Produce versioned Windows artifacts with checksums and traceable build metadata.
+- Provide one clean-worktree release gate covering typechecking, tests, packaging, and the packaged smoke test.
+- Exercise discovery, authentication, request authoring, cURL import, history, restart behavior, and diagnostics against representative real APIs.
+- Record reproducible failures and workflow friction without storing credentials or sensitive payloads.
+- Fix release blockers and repeated high-friction issues before adding major feature areas.
+- Document the remaining signing, branding, installer, and publication work honestly.
+
+Acceptance criteria:
+
+- A clean source revision produces a versioned archive whose checksum, embedded version, native dependency, database migration, renderer load, request execution, and history persistence are automatically verified.
+- At least eight representative real APIs are exercised, including public, API-key, bearer, multi-server, external-reference, and cURL-import workflows.
+- Every failed scenario has a sanitized reproduction or is explicitly classified as an external service limitation.
+- A new alpha user can install the portable build, complete the core workflow, restart without losing work, and locate enough diagnostic information to report a failure.
+- No major deferred feature begins until the alpha findings have been reviewed.
+
+Current evidence:
+
+- Windows packaging derives the version from the root package, emits a SHA-256 checksum and release manifest, and records source provenance.
+- Packaged smoke verification checks archive integrity and the embedded application version before exercising the existing clean-profile workflow.
+- `scripts\tapir-release-windows.cmd` provides a clean-worktree release gate and writes a structured release summary.
+- The real-work test matrix and sanitized issue template are documented in `docs/alpha-dogfooding.md`.
+- The first autonomous pass covered nine public specification/API cases, four standalone request cases, a 1,220-operation renderer catalog, and a full SQLite/service restart scenario. Results and fixes are recorded in `docs/alpha-dogfood-results.md`.
+- The local authentication dogfood path now runs nine real requests through `TapirApplicationService`, persists five credential profiles across a SQLite restart, and verifies request/history redaction against the live Node fixture; the fixture smoke suite verifies the same authentication contract in both Node and .NET.
 
 ## Progress log
 

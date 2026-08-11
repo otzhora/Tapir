@@ -3,6 +3,10 @@ import http from "node:http";
 const port = Number.parseInt(process.env.PORT ?? "5051", 10);
 const fixtureApiKey = process.env.TAPIR_FIXTURE_API_KEY ?? "tapir-node-secret";
 const fixtureBearerToken = process.env.TAPIR_FIXTURE_BEARER_TOKEN ?? "tapir-node-token";
+const fixtureUsername = process.env.TAPIR_FIXTURE_USERNAME ?? "tapir";
+const fixturePassword = process.env.TAPIR_FIXTURE_PASSWORD ?? "tapir-node-password";
+const fixtureQueryApiKey = process.env.TAPIR_FIXTURE_QUERY_API_KEY ?? "tapir-node-query-secret";
+const fixtureCookieApiKey = process.env.TAPIR_FIXTURE_COOKIE_API_KEY ?? "tapir-node-session";
 
 const animals = [
   {
@@ -154,6 +158,77 @@ const openApiDocument = {
             content: { "application/json": { schema: { type: "object", required: ["authenticated", "scheme"], properties: { authenticated: { type: "boolean" }, scheme: { type: "string" } } } } }
           },
           401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/auth/basic": {
+      get: {
+        operationId: "getBasicIdentity",
+        summary: "Verify basic authentication",
+        tags: ["System"],
+        security: [{ BasicAuth: [] }],
+        responses: {
+          200: { description: "Authenticated fixture identity", content: { "application/json": { schema: { $ref: "#/components/schemas/AuthenticatedIdentity" } } } },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/auth/query-api-key": {
+      get: {
+        operationId: "getQueryApiKeyIdentity",
+        summary: "Verify a query-string API key",
+        tags: ["System"],
+        security: [{ QueryApiKeyAuth: [] }],
+        responses: {
+          200: { description: "Authenticated fixture identity", content: { "application/json": { schema: { $ref: "#/components/schemas/AuthenticatedIdentity" } } } },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/auth/cookie-api-key": {
+      get: {
+        operationId: "getCookieApiKeyIdentity",
+        summary: "Verify a cookie API key",
+        tags: ["System"],
+        security: [{ CookieApiKeyAuth: [] }],
+        responses: {
+          200: { description: "Authenticated fixture identity", content: { "application/json": { schema: { $ref: "#/components/schemas/AuthenticatedIdentity" } } } },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/auth/alternative": {
+      get: {
+        operationId: "getAlternativeIdentity",
+        summary: "Verify either an API key or bearer token",
+        tags: ["System"],
+        security: [{ ApiKeyAuth: [] }, { BearerAuth: [] }],
+        responses: {
+          200: { description: "Authenticated fixture identity", content: { "application/json": { schema: { $ref: "#/components/schemas/AuthenticatedIdentity" } } } },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/auth/combined": {
+      get: {
+        operationId: "getCombinedIdentity",
+        summary: "Verify an API key and basic authentication together",
+        tags: ["System"],
+        security: [{ ApiKeyAuth: [], BasicAuth: [] }],
+        responses: {
+          200: { description: "Authenticated fixture identity", content: { "application/json": { schema: { $ref: "#/components/schemas/AuthenticatedIdentity" } } } },
+          401: { $ref: "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/auth/optional": {
+      get: {
+        operationId: "getOptionalIdentity",
+        summary: "Accept anonymous or bearer-authenticated requests",
+        tags: ["System"],
+        security: [{}, { BearerAuth: [] }],
+        responses: {
+          200: { description: "Anonymous or authenticated fixture identity", content: { "application/json": { schema: { $ref: "#/components/schemas/AuthenticatedIdentity" } } } }
         }
       }
     },
@@ -510,6 +585,20 @@ const openApiDocument = {
         type: "http",
         scheme: "bearer",
         bearerFormat: "JWT"
+      },
+      BasicAuth: {
+        type: "http",
+        scheme: "basic"
+      },
+      QueryApiKeyAuth: {
+        type: "apiKey",
+        name: "api_key",
+        in: "query"
+      },
+      CookieApiKeyAuth: {
+        type: "apiKey",
+        name: "tapir_session",
+        in: "cookie"
       }
     },
     parameters: {
@@ -567,6 +656,14 @@ const openApiDocument = {
       }
     },
     schemas: {
+      AuthenticatedIdentity: {
+        type: "object",
+        required: ["authenticated", "scheme"],
+        properties: {
+          authenticated: { type: "boolean" },
+          scheme: { type: "string" }
+        }
+      },
       Address: {
         type: "object",
         required: ["line1", "city", "region", "postalCode", "countryCode"],
@@ -937,6 +1034,16 @@ function readBody(request) {
   });
 }
 
+function readCookie(header, name) {
+  if (!header) return null;
+  for (const pair of header.split(";")) {
+    const separator = pair.indexOf("=");
+    if (separator < 0) continue;
+    if (pair.slice(0, separator).trim() === name) return decodeURIComponent(pair.slice(separator + 1).trim());
+  }
+  return null;
+}
+
 async function readJson(request) {
   const body = await readBody(request);
   return body ? JSON.parse(body) : {};
@@ -1029,6 +1136,61 @@ const server = http.createServer(async (request, response) => {
         return;
       }
       sendJson(response, 200, { authenticated: true, scheme: "bearer" });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/auth/basic") {
+      const expected = `Basic ${Buffer.from(`${fixtureUsername}:${fixturePassword}`).toString("base64")}`;
+      if (request.headers.authorization !== expected) {
+        sendJson(response, 401, problem(401, "Unauthorized", "Provide the fixture username and password with HTTP Basic authentication."));
+        return;
+      }
+      sendJson(response, 200, { authenticated: true, scheme: "basic" });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/auth/query-api-key") {
+      if (url.searchParams.get("api_key") !== fixtureQueryApiKey) {
+        sendJson(response, 401, problem(401, "Unauthorized", "Provide the fixture API key in the api_key query parameter."));
+        return;
+      }
+      sendJson(response, 200, { authenticated: true, scheme: "queryApiKey" });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/auth/cookie-api-key") {
+      if (readCookie(request.headers.cookie, "tapir_session") !== fixtureCookieApiKey) {
+        sendJson(response, 401, problem(401, "Unauthorized", "Provide the fixture API key in the tapir_session cookie."));
+        return;
+      }
+      sendJson(response, 200, { authenticated: true, scheme: "cookieApiKey" });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/auth/alternative") {
+      const apiKeyAccepted = request.headers["x-api-key"] === fixtureApiKey;
+      const bearerAccepted = request.headers.authorization === `Bearer ${fixtureBearerToken}`;
+      if (!apiKeyAccepted && !bearerAccepted) {
+        sendJson(response, 401, problem(401, "Unauthorized", "Provide either the fixture API key or bearer token."));
+        return;
+      }
+      sendJson(response, 200, { authenticated: true, scheme: apiKeyAccepted ? "apiKey" : "bearer" });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/auth/combined") {
+      const expected = `Basic ${Buffer.from(`${fixtureUsername}:${fixturePassword}`).toString("base64")}`;
+      if (request.headers["x-api-key"] !== fixtureApiKey || request.headers.authorization !== expected) {
+        sendJson(response, 401, problem(401, "Unauthorized", "Provide both the fixture API key and basic credentials."));
+        return;
+      }
+      sendJson(response, 200, { authenticated: true, scheme: "apiKey+basic" });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/auth/optional") {
+      const authenticated = request.headers.authorization === `Bearer ${fixtureBearerToken}`;
+      sendJson(response, 200, { authenticated, scheme: authenticated ? "bearer" : "anonymous" });
       return;
     }
 

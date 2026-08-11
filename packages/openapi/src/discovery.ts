@@ -11,7 +11,7 @@ const discoveryPaths = [
 ];
 
 const discoveryTimeoutMs = 15_000;
-const maxOpenApiDocumentBytes = 5 * 1024 * 1024;
+const maxOpenApiDocumentBytes = 20 * 1024 * 1024;
 const maxExternalReferenceBytes = 2 * 1024 * 1024;
 const maxTotalExternalReferenceBytes = 10 * 1024 * 1024;
 
@@ -20,8 +20,7 @@ export class FetchOpenApiDiscoveryService implements OpenApiDiscoveryService {
     const normalizedBase = normalizeBaseUrl(baseUrl);
     const errors: string[] = [];
 
-    for (const path of discoveryPaths) {
-      const specUrl = new URL(path, normalizedBase).toString();
+    for (const specUrl of discoveryCandidateUrls(normalizedBase)) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), discoveryTimeoutMs);
       try {
@@ -30,19 +29,19 @@ export class FetchOpenApiDiscoveryService implements OpenApiDiscoveryService {
           signal: controller.signal
         });
         if (!response.ok) {
-          errors.push(`${path}: HTTP ${response.status}`);
+          errors.push(`${specUrl}: HTTP ${response.status}`);
           continue;
         }
 
-        const document = JSON.parse(await readLimitedText(response, maxOpenApiDocumentBytes, "OpenAPI document")) as unknown;
+        const document = parseJsonDocument(await readLimitedText(response, maxOpenApiDocumentBytes, "OpenAPI document"));
         if (!isOpenApiDocument(document)) {
-          errors.push(`${path}: not an OpenAPI document`);
+          errors.push(`${specUrl}: not an OpenAPI document`);
           continue;
         }
 
-        return { specUrl, discoveryMethod: path, document: await resolveDiscoveredReferences(document, specUrl) };
+        return { specUrl, discoveryMethod: new URL(specUrl).pathname, document: await resolveDiscoveredReferences(document, specUrl) };
       } catch (error) {
-        errors.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+        errors.push(`${specUrl}: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
         clearTimeout(timeout);
       }
@@ -58,7 +57,7 @@ export class FetchOpenApiDiscoveryService implements OpenApiDiscoveryService {
     try {
       const response = await fetch(normalizedUrl, { headers: { accept: "application/json" }, signal: controller.signal });
       if (!response.ok) throw new Error(`OpenAPI document returned HTTP ${response.status}.`);
-      const document = JSON.parse(await readLimitedText(response, maxOpenApiDocumentBytes, "OpenAPI document")) as unknown;
+      const document = parseJsonDocument(await readLimitedText(response, maxOpenApiDocumentBytes, "OpenAPI document"));
       if (!isOpenApiDocument(document)) throw new Error("Configured URL did not return an OpenAPI document.");
       return { specUrl: normalizedUrl, discoveryMethod: "configured-url", document: await resolveDiscoveredReferences(document, normalizedUrl) };
     } finally {
@@ -89,10 +88,19 @@ async function resolveDiscoveredReferences(document: unknown, specUrl: string): 
 function normalizeBaseUrl(baseUrl: string): string {
   const withProtocol = /^https?:\/\//i.test(baseUrl) ? baseUrl : `https://${baseUrl}`;
   const url = new URL(withProtocol);
-  url.pathname = "/";
   url.search = "";
   url.hash = "";
+  if (!url.pathname.endsWith("/")) url.pathname += "/";
   return url.toString();
+}
+
+function discoveryCandidateUrls(baseUrl: string): string[] {
+  const base = new URL(baseUrl);
+  const origin = new URL("/", base);
+  return [...new Set(discoveryPaths.flatMap((path) => [
+    new URL(path.slice(1), base).toString(),
+    new URL(path, origin).toString()
+  ]))];
 }
 
 function normalizeHttpUrl(value: string, label: string): string {
@@ -133,4 +141,12 @@ async function readLimitedText(response: Response, maxBytes: number, label: stri
 
 function formatBytes(value: number): string {
   return `${Math.round(value / 1024 / 1024)} MB`;
+}
+
+function parseJsonDocument(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new Error("OpenAPI document is not valid JSON. Tapir currently supports JSON documents only; provide a JSON version of this specification.");
+  }
 }

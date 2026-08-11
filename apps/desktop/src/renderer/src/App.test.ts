@@ -104,6 +104,32 @@ describe("desktop renderer app", () => {
     expect(petsGroup.element.parentElement?.textContent).toContain("List pets");
   });
 
+  it("adds a server with an explicit OpenAPI document URL", async () => {
+    vi.mocked(bridge.addServer).mockResolvedValue({
+      server: {
+        ...serverWithDefinition.server,
+        id: "server-2",
+        name: "Explicit API",
+        baseUrl: "https://api.example.test/v3",
+        specUrl: "https://docs.example.test/openapi.json"
+      },
+      normalized: { ...serverWithDefinition.definition!, name: "Explicit API" }
+    });
+    const wrapper = mountApp();
+    await settle();
+
+    await wrapper.find("#base-url").setValue("https://api.example.test/v3");
+    await wrapper.find("#spec-url").setValue("https://docs.example.test/openapi.json");
+    wrapper.find("#base-url").element.closest("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle();
+
+    expect(bridge.addServer).toHaveBeenCalledWith(
+      "https://api.example.test/v3",
+      "https://docs.example.test/openapi.json"
+    );
+    expect(wrapper.text()).toContain("Explicit API");
+  });
+
   it("collapses and expands all operation groups at once", async () => {
     vi.mocked(bridge.getInitialState).mockResolvedValue({
       workspace,
@@ -129,6 +155,30 @@ describe("desktop renderer app", () => {
 
     await expandAll.trigger("click");
     expect(wrapper.findAll("button[aria-expanded='true']")).toHaveLength(2);
+  });
+
+  it("renders a production-scale operation catalog", async () => {
+    const operations = Array.from({ length: 1_220 }, (_, index): NormalizedOperation => ({
+      ...listPetsOperation,
+      operationId: `operation-${index}`,
+      sourceOperationId: `operation-${index}`,
+      path: `/resources/${index}`,
+      summary: `Operation ${index}`,
+      tags: [`Group ${index % 20}`]
+    }));
+    vi.mocked(bridge.getInitialState).mockResolvedValue({
+      workspace,
+      servers: [{
+        ...serverWithDefinition,
+        definition: { ...serverWithDefinition.definition!, operations }
+      }]
+    });
+
+    const wrapper = mountApp();
+    await settle();
+
+    expect(wrapper.text()).toContain("1220");
+    expect(wrapper.text()).toContain("Operation 1219");
   });
 
   it("creates and previews a custom request from the UI", async () => {

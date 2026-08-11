@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TapirApplicationService } from "./application.js";
 import type {
   ApiDefinition,
@@ -149,6 +149,33 @@ describe("TapirApplicationService", () => {
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
     expect("definition" in result).toBe(false);
     expect("source" in result).toBe(false);
+  });
+
+  it("uses an explicit OpenAPI document URL when adding a server", async () => {
+    const workspace = testWorkspace();
+    const discovery = fixedDiscovery();
+    const fetchDocument = vi.spyOn(discovery, "fetch");
+    const discover = vi.spyOn(discovery, "discover");
+    const service = new TapirApplicationService({
+      workspace,
+      servers: new MemoryServerRepository(),
+      serverVariables: unusedServerVariables(),
+      definitions: new MemoryDefinitionRepository(),
+      authProfiles: unusedAuthProfiles(),
+      history: unusedHistory(),
+      requestDrafts: unusedRequestDrafts(),
+      discovery,
+      normalizer: fixedNormalizer(),
+      http: unusedHttp()
+    });
+
+    await service.addServer({
+      baseUrl: "https://api.example.test/v3",
+      specUrl: "https://docs.example.test/openapi.json"
+    });
+
+    expect(fetchDocument).toHaveBeenCalledWith("https://docs.example.test/openapi.json");
+    expect(discover).not.toHaveBeenCalled();
   });
 
   it("refreshes schemas and moves changed operation drafts to custom deprecated requests", async () => {

@@ -31,7 +31,7 @@ function parseByChannel(channel: TapirIpcChannel, value: unknown): unknown {
       return undefined;
     case "tapir:addServer": {
       const input = record(value, channel);
-      return { baseUrl: string(input.baseUrl, "baseUrl") };
+      return { baseUrl: string(input.baseUrl, "baseUrl"), specUrl: optionalString(input.specUrl, "specUrl") };
     }
     case "tapir:refreshServerSchema":
     case "tapir:rediscoverServerSchema": {

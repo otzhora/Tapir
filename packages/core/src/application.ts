@@ -85,7 +85,10 @@ export class TapirApplicationService {
   async addServer(input: AddServerRequest): Promise<AddServerResponse> {
     const { definitions, discovery, normalizer, servers, workspace } = this.dependencies;
     const baseUrl = normalizeServerBaseUrl(input.baseUrl);
-    const discovered = await discovery.discover(baseUrl);
+    const specUrl = input.specUrl?.trim();
+    const discovered = specUrl
+      ? await discovery.fetch(normalizeHttpUrl(specUrl, "OpenAPI document URL"))
+      : await discovery.discover(baseUrl);
     const normalized = normalizer.normalize(discovered.document);
     const now = new Date().toISOString();
     const result = await this.inTransaction(async () => {
