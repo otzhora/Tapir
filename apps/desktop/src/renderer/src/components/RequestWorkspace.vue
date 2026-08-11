@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import { AlertCircle, Clipboard, Database, Eye, FileJson2, Plus, Send, TerminalSquare, X } from "lucide-vue-next";
+import { AlertCircle, Check, Clipboard, Copy, Database, Eye, FileJson2, LoaderCircle, Pencil, Plus, Send, TerminalSquare, X } from "lucide-vue-next";
 import type { NormalizedOperation, PreparedOperationRequest, RequestDraft, RequestDraftHeader, RequestDraftParameter, SaveAuthenticationRequest, ServerAuthenticationConfiguration, ServerWithDefinition } from "@tapir/core";
 import type { RequestTab, RequestTabItem } from "../types";
 import { eyebrowClass, fieldClass, iconButtonClass, mutedTextClass, primaryActionClass, softTextClass, strongTextClass } from "../uiClasses";
@@ -27,12 +27,14 @@ const props = defineProps<{
   requestBodySchema: string;
   requiredBodyFields: string[];
   requestPreview: PreparedOperationRequest | null;
+  requestError: string;
   requestTabs: RequestTabItem[];
   responsesSchema: string;
   selectedContentTypes: string[];
   selectedOperation: NormalizedOperation | null;
   selectedServer: ServerWithDefinition | null;
   validationIssues: ValidationIssue[];
+  saveAuthenticationHandler: (input: Omit<SaveAuthenticationRequest, "serverId">) => Promise<void>;
 }>();
 
 const emit = defineEmits<{
@@ -43,9 +45,9 @@ const emit = defineEmits<{
   closeDrafts: [draftIds: string[]];
   copyCurl: [shell: CurlShell, includeSecrets: boolean];
   createDraft: [];
+  duplicateDraft: [draftId: string];
   removeHeader: [id: string];
   removeParameter: [id: string];
-  saveAuthentication: [input: Omit<SaveAuthenticationRequest, "serverId">];
   deleteAuthentication: [schemeKey: string];
   selectDraft: [draftId: string];
   setParameter: [id: string, value: string];
@@ -65,9 +67,14 @@ const emit = defineEmits<{
 const methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 const draftMenu = ref<{ draftId: string; x: number; y: number } | null>(null);
 const draftMenuFirstAction = ref<HTMLButtonElement | null>(null);
+const draftMenuElement = ref<HTMLElement | null>(null);
+const activeNameInput = ref<HTMLInputElement | null>(null);
 const curlShell = ref<CurlShell>("posix");
 const credentialValue = ref("");
 const basicUsername = ref("");
+const authenticationError = ref("");
+const authenticationSaved = ref(false);
+const isSavingAuthentication = ref(false);
 const selectedSchemeKey = ref("");
 const supportedSchemes = computed(() => props.selectedOperation?.securitySchemes.filter((scheme) =>
   (scheme.type === "apiKey" && Boolean(scheme.name && scheme.in))
@@ -80,31 +87,67 @@ const configuredAuthentication = computed(() => props.authentication.find((item)
     && item.location === selectedScheme.value.in && item.parameterName?.toLowerCase() === selectedScheme.value.name?.toLowerCase())
   ?? null);
 const authenticationOptional = computed(() => Boolean(props.selectedOperation?.securityRequirements.some((requirement) => Object.keys(requirement).length === 0)));
+const isBasicAuthentication = computed(() => selectedScheme.value?.scheme?.toLowerCase() === "basic");
+const hasPendingAuthentication = computed(() => Boolean(credentialValue.value)
+  || (isBasicAuthentication.value && basicUsername.value !== (configuredAuthentication.value?.username ?? "")));
+const isPendingAuthenticationValid = computed(() => Boolean(credentialValue.value)
+  && (!isBasicAuthentication.value || Boolean(basicUsername.value.trim())));
 watch([() => props.selectedServer?.server.id, () => props.selectedOperation?.operationId], () => {
   credentialValue.value = "";
   selectedSchemeKey.value = supportedSchemes.value[0]?.key ?? "";
   basicUsername.value = configuredAuthentication.value?.username ?? "";
+  authenticationError.value = "";
+  authenticationSaved.value = false;
 }, { immediate: true });
 watch(selectedSchemeKey, () => {
   basicUsername.value = configuredAuthentication.value?.username ?? "";
   credentialValue.value = "";
+  authenticationError.value = "";
+  authenticationSaved.value = false;
+});
+watch([credentialValue, basicUsername], () => {
+  authenticationError.value = "";
+  if (hasPendingAuthentication.value) authenticationSaved.value = false;
 });
 
-function saveSelectedAuthentication(): void {
+async function saveSelectedAuthentication(): Promise<boolean> {
   const scheme = selectedScheme.value;
-  if (!scheme || !credentialValue.value) return;
+  if (!scheme || !hasPendingAuthentication.value) return true;
+  if (!isPendingAuthenticationValid.value) {
+    authenticationError.value = isBasicAuthentication.value && !basicUsername.value.trim()
+      ? "Enter both a username and password before saving."
+      : "Enter a credential before saving.";
+    return false;
+  }
   const httpScheme = scheme.scheme?.toLowerCase();
   const type = scheme.type === "apiKey" ? "apiKey" : httpScheme === "basic" ? "basic" : "bearer";
-  emit("saveAuthentication", {
-    schemeKey: scheme.key,
-    type,
-    parameterName: scheme.name,
-    location: scheme.in,
-    username: type === "basic" ? basicUsername.value : undefined,
-    secretValue: credentialValue.value
-  });
-  credentialValue.value = "";
+  isSavingAuthentication.value = true;
+  authenticationError.value = "";
+  try {
+    await props.saveAuthenticationHandler({
+      schemeKey: scheme.key,
+      type,
+      parameterName: scheme.name,
+      location: scheme.in,
+      username: type === "basic" ? basicUsername.value.trim() : undefined,
+      secretValue: credentialValue.value
+    });
+    credentialValue.value = "";
+    authenticationSaved.value = true;
+    return true;
+  } catch (error) {
+    authenticationError.value = error instanceof Error ? error.message : String(error);
+    return false;
+  } finally {
+    isSavingAuthentication.value = false;
+  }
 }
+
+async function savePendingAuthentication(): Promise<boolean> {
+  return hasPendingAuthentication.value ? saveSelectedAuthentication() : true;
+}
+
+defineExpose({ savePendingAuthentication });
 
 function schemeLabel(scheme: NormalizedOperation["securitySchemes"][number]): string {
   if (scheme.type === "apiKey") return `${scheme.key} · API key in ${scheme.in}`;
@@ -135,6 +178,37 @@ function closeDraftMenu(): void {
 function closeDraftTabs(draftIds: string[]): void {
   closeDraftMenu();
   emit("closeDrafts", draftIds);
+}
+
+function duplicateDraft(draftId: string): void {
+  closeDraftMenu();
+  emit("duplicateDraft", draftId);
+}
+
+async function renameDraft(draftId: string): Promise<void> {
+  closeDraftMenu();
+  if (props.activeDraft?.id !== draftId) emit("selectDraft", draftId);
+  await nextTick();
+  activeNameInput.value?.focus();
+  activeNameInput.value?.select();
+}
+
+function handleDraftMenuKeydown(event: KeyboardEvent): void {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeDraftMenu();
+    return;
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+  const buttons = Array.from(draftMenuElement.value?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
+  if (!buttons.length) return;
+  event.preventDefault();
+  const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  const next = event.key === "Home" ? 0
+    : event.key === "End" ? buttons.length - 1
+      : event.key === "ArrowDown" ? (current + 1 + buttons.length) % buttons.length
+        : (current - 1 + buttons.length) % buttons.length;
+  buttons[next]?.focus();
 }
 
 const generalValidationIssues = computed(() => {
@@ -185,13 +259,17 @@ function usesStructuredBodyEditor(value: string): boolean {
       <Teleport to="body">
         <div v-if="draftMenu" class="fixed inset-0 z-40" role="presentation" @pointerdown.self="closeDraftMenu" @contextmenu.prevent="closeDraftMenu">
           <div
+            ref="draftMenuElement"
             class="request-tab-menu"
             role="menu"
             aria-label="Request tab actions"
             :style="{ left: `${draftMenu.x}px`, top: `${draftMenu.y}px` }"
-            @keydown.esc.stop="closeDraftMenu"
+            @keydown="handleDraftMenuKeydown"
           >
-            <button ref="draftMenuFirstAction" role="menuitem" type="button" @click="closeDraftTabs([draftMenu.draftId])">Close tab</button>
+            <button ref="draftMenuFirstAction" role="menuitem" type="button" @click="renameDraft(draftMenu.draftId)"><Pencil :size="14" /> Rename request</button>
+            <button role="menuitem" type="button" @click="duplicateDraft(draftMenu.draftId)"><Copy :size="14" /> Duplicate request</button>
+            <div class="request-tab-menu-separator" role="separator"></div>
+            <button role="menuitem" type="button" @click="closeDraftTabs([draftMenu.draftId])">Close tab</button>
             <button role="menuitem" type="button" :disabled="draftTabs.length < 2" @click="closeDraftTabs(draftTabs.filter((draft) => draft.id !== draftMenu?.draftId).map((draft) => draft.id))">Close other tabs</button>
             <button role="menuitem" type="button" @click="closeDraftTabs(draftTabs.map((draft) => draft.id))">Close all tabs</button>
           </div>
@@ -207,13 +285,14 @@ function usesStructuredBodyEditor(value: string): boolean {
                 <select v-else :value="activeDraft.method" class="h-9 rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)] px-2 text-[13px] font-black text-[var(--tapir-text-strong)] outline-none" @change="emit('updateMethod', inputValue($event))">
                   <option v-for="method in methods" :key="method" :value="method">{{ method }}</option>
                 </select>
-                <input :class="['min-w-0 bg-transparent text-[18px] font-bold outline-none [overflow-wrap:anywhere]', strongTextClass]" :value="activeDraft.name" @input="emit('updateDraftName', inputValue($event))" />
+                <input ref="activeNameInput" aria-label="Request name" :class="['min-w-0 rounded bg-transparent px-1 text-[18px] font-bold outline-none transition focus:bg-[var(--tapir-bg-field)] focus:shadow-[0_0_0_2px_var(--tapir-focus-ring)] [overflow-wrap:anywhere]', strongTextClass]" :value="activeDraft.name" @input="emit('updateDraftName', inputValue($event))" />
               </div>
               <p v-if="selectedOperation && !isCustomSpace" :class="['m-0 max-w-[900px] text-[13px]', mutedTextClass]">{{ selectedOperation.description || selectedOperation.path }}</p>
               <p v-else :class="['m-0 max-w-[900px] text-[13px]', mutedTextClass]">Custom request</p>
             </div>
-            <button :class="[primaryActionClass, 'h-10 min-w-[104px] shrink-0 px-3.5 shadow-[var(--tapir-primary-shadow)]']" :disabled="!canSend" @click="emit('callOperation')">
-              <Send :size="17" />
+            <button :class="[primaryActionClass, 'h-10 min-w-[104px] shrink-0 px-3.5 shadow-[var(--tapir-primary-shadow)]']" :disabled="!canSend || isSavingAuthentication" :aria-busy="isSending || isSavingAuthentication" :title="validationIssues.length ? 'Resolve validation issues before sending' : undefined" @click="emit('callOperation')">
+              <LoaderCircle v-if="isSending || isSavingAuthentication" :size="17" class="animate-spin" />
+              <Send v-else :size="17" />
               {{ isSending ? "Sending" : "Send" }}
             </button>
           </div>
@@ -238,6 +317,10 @@ function usesStructuredBodyEditor(value: string): boolean {
           <div v-if="activeDraft.deprecatedAt" class="flex items-start gap-2 rounded-md border border-[var(--tapir-warning-border)] bg-[var(--tapir-warning-bg)] p-3 text-[13px] font-bold text-[var(--tapir-warning)]">
             <AlertCircle :size="16" class="mt-0.5 shrink-0" />
             <span>{{ activeDraft.deprecationReason || "This request was moved to Custom because its OpenAPI operation changed." }}</span>
+          </div>
+          <div v-if="requestError" class="flex items-start gap-2 rounded-md border border-[var(--tapir-danger-border)] bg-[var(--tapir-danger-bg)] p-3 text-[13px] font-bold text-[var(--tapir-danger)]" role="alert">
+            <AlertCircle :size="16" class="mt-0.5 shrink-0" />
+            <span>{{ requestError }}</span>
           </div>
         </header>
 
@@ -315,15 +398,23 @@ function usesStructuredBodyEditor(value: string): boolean {
                 <select v-model="selectedSchemeKey" :class="fieldClass">
                   <option v-for="scheme in supportedSchemes" :key="scheme.key" :value="scheme.key">{{ schemeLabel(scheme) }}</option>
                 </select>
-                <div v-if="configuredAuthentication" class="flex items-center justify-between gap-3 text-[13px] font-bold text-[var(--tapir-success)]">
-                  <span>Credential configured. Its secret stays in the main process.</span>
+                <div v-if="configuredAuthentication && !hasPendingAuthentication" class="flex items-center justify-between gap-3 text-[13px] font-bold text-[var(--tapir-success)]">
+                  <span class="flex items-center gap-1.5"><Check :size="15" /> {{ authenticationSaved ? "Credential saved." : "Credential configured." }} Its secret stays in the main process.</span>
                   <button class="mini-button" type="button" @click="emit('deleteAuthentication', configuredAuthentication.schemeKey)">Remove</button>
                 </div>
-                <div class="grid gap-2" :class="selectedScheme?.scheme?.toLowerCase() === 'basic' ? 'md:grid-cols-[1fr_1fr_auto]' : 'md:grid-cols-[1fr_auto]'">
-                  <input v-if="selectedScheme?.scheme?.toLowerCase() === 'basic'" v-model="basicUsername" :class="fieldClass" placeholder="Username" autocomplete="username" />
-                  <input v-model="credentialValue" type="password" :class="fieldClass" :placeholder="configuredAuthentication ? 'Replace configured credential' : 'Credential value'" autocomplete="new-password" />
-                  <button class="mini-button" :disabled="!credentialValue || (selectedScheme?.scheme?.toLowerCase() === 'basic' && !basicUsername)" @click="saveSelectedAuthentication">{{ configuredAuthentication ? "Replace" : "Save" }}</button>
-                </div>
+                <form class="grid gap-2" :class="isBasicAuthentication ? 'md:grid-cols-[1fr_1fr_auto]' : 'md:grid-cols-[1fr_auto]'" @submit.prevent="saveSelectedAuthentication">
+                  <input v-if="isBasicAuthentication" v-model="basicUsername" :class="fieldClass" aria-label="Basic authentication username" placeholder="Username" autocomplete="username" />
+                  <input v-model="credentialValue" type="password" :class="fieldClass" aria-label="Authentication credential" :placeholder="configuredAuthentication ? 'Replace configured credential' : 'Credential value'" autocomplete="new-password" />
+                  <button class="mini-button" type="submit" :disabled="!isPendingAuthenticationValid || isSavingAuthentication">
+                    <LoaderCircle v-if="isSavingAuthentication" :size="14" class="animate-spin" />
+                    {{ isSavingAuthentication ? "Saving" : configuredAuthentication ? "Replace" : "Save" }}
+                  </button>
+                </form>
+                <p v-if="hasPendingAuthentication" class="m-0 flex items-start gap-1.5 text-[12px] font-bold text-[var(--tapir-warning)]" role="status">
+                  <AlertCircle :size="14" class="mt-0.5 shrink-0" />
+                  Unsaved credential. Press Enter or Save; Send will save it first.
+                </p>
+                <p v-if="authenticationError" class="field-error m-0" role="alert"><AlertCircle :size="14" class="mt-0.5 shrink-0" /> {{ authenticationError }}</p>
               </template>
               <p v-if="unsupportedSchemes.length" class="m-0 text-[12px] text-[var(--tapir-warning)]">Unsupported: {{ unsupportedSchemes.map((scheme) => scheme.key).join(", ") }}.</p>
             </div>

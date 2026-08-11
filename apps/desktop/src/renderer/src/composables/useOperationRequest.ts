@@ -205,6 +205,31 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     await Promise.all(draftIds.map((draftId) => persistence.deleteDraft(draftId)));
   }
 
+  async function duplicateDraft(draftId: string): Promise<RequestDraft | null> {
+    const tapir = getTapirBridge();
+    const source = drafts.value.find((draft) => draft.id === draftId);
+    if (!tapir || !source) return null;
+    const draft = await tapir.createRequestDraft({
+      serverId: source.serverInstanceId,
+      sourceType: source.sourceType,
+      operationId: source.operationId,
+      name: `${source.name} copy`,
+      isNameManual: true,
+      method: source.method,
+      path: source.path,
+      url: source.url,
+      parameters: parseDraftParameters(source),
+      headers: parseDraftHeaders(source),
+      body: source.body,
+      contentType: source.contentType,
+      sortOrder: Date.now()
+    });
+    persistence.addDraft(draft);
+    activeDraftBySpace[activeSpaceKey.value] = draft.id;
+    activeRequestTab.value = "params";
+    return draft;
+  }
+
   function selectDraft(draftId: string): void {
     activeDraftBySpace[activeSpaceKey.value] = draftId;
     activeRequestTab.value = "params";
@@ -356,6 +381,7 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     createCustomRequest,
     createImportedCustomRequest,
     createOpenApiRequest,
+    duplicateDraft,
     curlCommand,
     isCustomSpace,
     isPreviewing,

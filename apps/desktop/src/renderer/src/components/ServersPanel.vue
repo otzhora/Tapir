@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { Beaker, ChevronRight, Plus, RefreshCw, Server, Settings } from "lucide-vue-next";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { Beaker, ChevronRight, Plus, RefreshCw, Search, Server, Settings, X } from "lucide-vue-next";
 import type { NormalizedOperation, ServerWithDefinition, Workspace } from "@tapir/core";
 import { CUSTOM_OPERATION_ID } from "../composables/useOperationRequest";
 import { activeItemClass, eyebrowClass, fieldClass, iconButtonClass, itemClass, mutedTextClass, primaryActionClass, softTextClass, strongTextClass, subtleTextClass } from "../uiClasses";
@@ -37,6 +37,24 @@ const isAddingServer = ref(false);
 const refreshingServerIds = ref(new Set<string>());
 const expandedServerId = ref<string | null>(props.selectedServerId);
 const collapsedOperationGroups = ref(new Set<string>());
+const operationSearch = ref("");
+const filteredOperationGroups = computed(() => {
+  const query = operationSearch.value.trim().toLocaleLowerCase();
+  if (!query) return props.groupedOperations;
+  return props.groupedOperations
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((operation) => [
+        operation.method,
+        operation.path,
+        operation.summary,
+        operation.operationId,
+        ...operation.tags
+      ].some((value) => value?.toLocaleLowerCase().includes(query)))
+    }))
+    .filter((group) => group.items.length > 0);
+});
+const filteredOperationsCount = computed(() => filteredOperationGroups.value.reduce((count, group) => count + group.items.length, 0));
 const areAllOperationGroupsCollapsed = computed(() => props.groupedOperations.length > 0
   && props.groupedOperations.every((group) => !isOperationGroupExpanded(group.name)));
 
@@ -58,8 +76,19 @@ function operationGroupKey(groupName: string): string {
 }
 
 function isOperationGroupExpanded(groupName: string): boolean {
-  return !collapsedOperationGroups.value.has(operationGroupKey(groupName));
+  return Boolean(operationSearch.value.trim()) || !collapsedOperationGroups.value.has(operationGroupKey(groupName));
 }
+
+function focusOperationSearch(event: KeyboardEvent): void {
+  if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+  const target = event.target;
+  if (target instanceof Element && target.matches("input, textarea, select, [contenteditable='true']")) return;
+  event.preventDefault();
+  document.querySelector<HTMLInputElement>("input[aria-label='Search operations']")?.focus();
+}
+
+onMounted(() => window.addEventListener("keydown", focusOperationSearch));
+onUnmounted(() => window.removeEventListener("keydown", focusOperationSearch));
 
 function toggleOperationGroup(groupName: string): void {
   const key = operationGroupKey(groupName);
@@ -145,16 +174,20 @@ function toErrorMessage(error: unknown): string {
         </div>
       </div>
 
-      <form class="mb-4 grid gap-2.5" @submit.prevent="addServer">
-        <label for="base-url" :class="eyebrowClass">Add Server</label>
-        <div class="grid grid-cols-[minmax(0,1fr)_44px] gap-2.5">
+      <form class="mb-4 grid gap-2" @submit.prevent="addServer">
+        <label for="base-url" :class="eyebrowClass">Server base URL</label>
+        <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
           <input id="base-url" v-model="baseUrl" :class="fieldClass" placeholder="https://api.example.com" required />
-          <button :class="[primaryActionClass, 'h-9']" type="submit" :disabled="isAddingServer || !baseUrl.trim()" title="Discover spec">
+          <button :class="[primaryActionClass, 'h-9 px-3']" type="submit" :disabled="isAddingServer || !baseUrl.trim()">
             <RefreshCw v-if="isAddingServer" :size="17" class="animate-spin" />
             <Plus v-else :size="18" />
+            {{ isAddingServer ? "Discovering" : "Add" }}
           </button>
         </div>
-        <input id="spec-url" v-model="specUrl" :class="fieldClass" aria-label="OpenAPI document URL (optional)" placeholder="Optional OpenAPI document URL" />
+        <p :class="['m-0 text-[11px] leading-4', mutedTextClass]">Tapir discovers common OpenAPI URLs automatically.</p>
+        <label for="spec-url" :class="eyebrowClass">OpenAPI URL <span class="normal-case font-medium">(optional)</span></label>
+        <input id="spec-url" v-model="specUrl" :class="fieldClass" placeholder="https://docs.example.com/openapi.json" />
+        <p :class="['m-0 text-[11px] leading-4', mutedTextClass]">Use this when the document lives at a custom URL.</p>
       </form>
 
       <p v-if="errorMessage" class="my-2.5 rounded-md border border-[var(--tapir-danger-border)] bg-[var(--tapir-danger-bg)] p-2.5 text-[13px] text-[var(--tapir-danger)]">{{ errorMessage }}</p>
@@ -203,6 +236,12 @@ function toErrorMessage(error: unknown): string {
               </button>
               <strong>{{ operationsCount }}</strong>
             </div>
+            <div class="relative mb-1 px-1">
+              <Search :size="14" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--tapir-text-subtle)]" />
+              <input v-model="operationSearch" :class="[fieldClass, 'pl-8 pr-8']" aria-label="Search operations" placeholder="Search operations…" title="Search by method, path, name, ID, or tag (/)" />
+              <button v-if="operationSearch" class="absolute right-2 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded text-[var(--tapir-text-muted)] hover:bg-[var(--tapir-bg-control-hover)] hover:text-[var(--tapir-text-strong)]" type="button" aria-label="Clear operation search" @click="operationSearch = ''"><X :size="14" /></button>
+            </div>
+            <p v-if="operationSearch" :class="['m-0 px-2 text-[11px]', mutedTextClass]">{{ filteredOperationsCount }} of {{ operationsCount }} operations</p>
             <button :class="[itemClass, 'grid-cols-[auto_minmax(0,1fr)_auto] items-center px-2 py-1.5', selectedOperationId === CUSTOM_OPERATION_ID && activeItemClass]" @click="emit('selectCustom')">
               <span :class="['grid h-6 w-[58px] place-items-center rounded bg-[var(--tapir-bg-control-hover)] text-[11px] font-black', softTextClass]">HTTP</span>
               <span class="flex min-w-0 items-baseline gap-2 overflow-hidden">
@@ -212,7 +251,8 @@ function toErrorMessage(error: unknown): string {
               <Plus :size="16" :class="['ml-auto shrink-0 hover:text-[var(--tapir-text-strong)]', mutedTextClass]" @click.stop="emit('addCustomRequest')" />
             </button>
 
-            <div v-for="group in groupedOperations" :key="group.name" class="grid gap-0.5">
+            <div v-if="operationSearch && filteredOperationsCount === 0" :class="['grid min-h-24 place-items-center px-3 text-center text-[12px]', mutedTextClass]">No operations match “{{ operationSearch }}”.</div>
+            <div v-for="group in filteredOperationGroups" :key="group.name" class="grid gap-0.5">
               <button
                 :aria-expanded="isOperationGroupExpanded(group.name)"
                 :class="['mt-1.5 flex w-full items-center gap-1 rounded px-2 py-1 text-left text-[11px] font-bold uppercase transition hover:bg-[var(--tapir-bg-control)] hover:text-[var(--tapir-text-strong)]', subtleTextClass]"

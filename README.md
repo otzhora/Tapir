@@ -75,6 +75,22 @@ To run Tapir with both local test APIs:
 npm run dev:with-test-projects
 ```
 
+### Electron end-to-end test
+
+Run the production-built desktop app through its real main process, preload bridge, SQLite storage,
+safe credential repositories, renderer, and both bundled mock APIs:
+
+```cmd
+scripts\tapir-desktop-e2e.cmd
+```
+
+The harness uses ephemeral API ports and a temporary Tapir profile, so it can run alongside normal
+development without changing local workspace data. It covers automatic and explicit OpenAPI discovery,
+auth saving on Send, request duplication and renaming, history restoration, cURL import, server editing,
+destructive-action cancellation, and persistence across a cold restart. Results and failure screenshots
+are written to `artifacts/e2e-electron/`. Playwright Core drives the repository's Electron binary and does
+not download separate browser binaries.
+
 ## Test APIs
 
 Two small Swagger-backed API fixtures live under `test-projects/` for testing Tapir discovery, request execution, and live authentication. Both expose header/query/cookie API keys, bearer and Basic auth, plus optional, alternative, and combined security requirements:

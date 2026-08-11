@@ -25,6 +25,7 @@ try {
 
   runNpm(["run", "typecheck"]);
   runNpm(["test"]);
+  runNpm(["run", "e2e:desktop"]);
   runNpm(["run", "package:win"]);
   runNpm(["run", "smoke:packaged:win"]);
   run("git", ["diff", "--check"]);
@@ -33,7 +34,7 @@ try {
   const summary = {
     ok: true,
     verifiedAt: new Date().toISOString(),
-    verification: ["typecheck", "tests", "fixture authentication", "packaging", "packaged smoke", "git diff --check"],
+    verification: ["typecheck", "tests", "fixture authentication", "Electron E2E", "packaging", "packaged smoke", "git diff --check"],
     ...manifest
   };
   await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");

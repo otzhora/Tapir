@@ -22,6 +22,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const discovery = new FetchOpenApiDiscoveryService();
 const normalizer = new BasicOpenApiNormalizer();
 
+if (process.env.TAPIR_E2E_USER_DATA) {
+  app.setPath("userData", process.env.TAPIR_E2E_USER_DATA);
+}
+
 let tapir: TapirApplicationService;
 let database: SqliteDatabase | null = null;
 const trustedRendererUrls = new Map<number, string>();

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { Plus, RefreshCw, Save, Server, Trash2, Variable } from "lucide-vue-next";
 import type { ServerVariable, ServerWithDefinition } from "@tapir/core";
 import { fieldClass, iconButtonClass, mutedTextClass, primaryActionClass, strongTextClass } from "../uiClasses";
@@ -22,6 +22,11 @@ const successMessage = ref("");
 const isSaving = ref(false);
 const variableDrafts = ref<Array<{ id?: string; key: string; value: string }>>([]);
 const serverDraft = ref({ name: "", baseUrl: "", specUrl: "" });
+const isServerDirty = computed(() => serverDraft.value.name !== props.server.server.name
+  || serverDraft.value.baseUrl !== props.server.server.baseUrl
+  || serverDraft.value.specUrl !== props.server.server.specUrl);
+const areVariablesDirty = computed(() => JSON.stringify(variableDrafts.value.map(({ key, value }) => ({ key, value })))
+  !== JSON.stringify(props.server.variables.map(({ key, value }) => ({ key, value }))));
 
 watch(() => props.server.server.id, () => {
   variableDrafts.value = props.server.variables.map((variable) => ({
@@ -156,13 +161,14 @@ async function saveVariables(): Promise<void> {
             <code v-if="diagnostic.path" :class="['text-[11px]', mutedTextClass]">{{ diagnostic.path }}</code>
           </div>
         </div>
-        <label class="grid gap-1.5 text-[13px] font-bold">Name<input v-model="serverDraft.name" :class="fieldClass" placeholder="Example API" /></label>
-        <label class="grid gap-1.5 text-[13px] font-bold">Base URL<input v-model="serverDraft.baseUrl" :class="fieldClass" placeholder="https://api.example.com" /></label>
-        <label class="grid gap-1.5 text-[13px] font-bold">OpenAPI document URL<input v-model="serverDraft.specUrl" :class="fieldClass" placeholder="https://api.example.com/openapi.json" /></label>
-        <div class="flex flex-wrap justify-end gap-2">
+        <label class="grid gap-1.5 text-[13px] font-bold">Name<input v-model="serverDraft.name" :class="fieldClass" placeholder="Example API" @keyup.enter="saveConfiguration" /></label>
+        <label class="grid gap-1.5 text-[13px] font-bold">Base URL<input v-model="serverDraft.baseUrl" :class="fieldClass" placeholder="https://api.example.com" @keyup.enter="saveConfiguration" /></label>
+        <label class="grid gap-1.5 text-[13px] font-bold">OpenAPI document URL<input v-model="serverDraft.specUrl" :class="fieldClass" placeholder="https://api.example.com/openapi.json" @keyup.enter="saveConfiguration" /></label>
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          <span v-if="isServerDirty" class="mr-auto text-[12px] font-bold text-[var(--tapir-warning)]">Unsaved configuration changes</span>
           <button class="mini-button" type="button" :disabled="isSaving" @click="refreshSchema(false)"><RefreshCw :size="15" /> Refresh configured spec</button>
           <button class="mini-button" type="button" :disabled="isSaving" @click="refreshSchema(true)"><RefreshCw :size="15" /> Rediscover from base URL</button>
-          <button :class="[primaryActionClass, 'h-9 px-4']" type="button" :disabled="isSaving" @click="saveConfiguration"><Save :size="16" /> Save configuration</button>
+          <button :class="[primaryActionClass, 'h-9 px-4']" type="button" :disabled="isSaving || !isServerDirty" @click="saveConfiguration"><Save :size="16" /> Save configuration</button>
         </div>
         <div class="mt-4 flex items-center justify-between gap-4 rounded-md border border-[var(--tapir-danger-border)] bg-[var(--tapir-danger-bg)] p-4">
           <div><strong class="text-[var(--tapir-danger)]">Delete server</strong><p :class="['mb-0 mt-1 text-[12px]', mutedTextClass]">Deletes specifications, OpenAPI drafts, variables, credentials, and history. Custom drafts are retained without a server.</p></div>
@@ -203,8 +209,9 @@ async function saveVariables(): Promise<void> {
           <div v-if="variableDrafts.length === 0" :class="['grid min-h-[140px] place-items-center p-4 text-[13px]', mutedTextClass]">No variables yet.</div>
         </div>
 
-        <div class="flex justify-end">
-          <button :class="[primaryActionClass, 'h-9 min-w-[150px] px-4']" type="button" :disabled="isSaving" @click="saveVariables">
+        <div class="flex items-center justify-end gap-3">
+          <span v-if="areVariablesDirty" class="mr-auto text-[12px] font-bold text-[var(--tapir-warning)]">Unsaved variable changes</span>
+          <button :class="[primaryActionClass, 'h-9 min-w-[150px] px-4']" type="button" :disabled="isSaving || !areVariablesDirty" @click="saveVariables">
             <RefreshCw v-if="isSaving" :size="16" class="animate-spin" />
             <Save v-else :size="16" />
             Save variables

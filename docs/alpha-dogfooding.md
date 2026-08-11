@@ -17,6 +17,17 @@ scripts\tapir-npm.cmd run dogfood:public
 
 It exercises only documented, read-only public endpoints and writes the sanitized result to `artifacts/dogfood-public-apis.json`. Expected compatibility rejections are distinguished from regressions.
 
+Before exploratory dogfooding, run the real Electron workflow harness:
+
+```cmd
+scripts\tapir-desktop-e2e.cmd
+```
+
+It launches a production build with an isolated temporary profile and ephemeral copies of both bundled
+mock APIs. The pass covers discovery, authentication, request tabs, history, cURL import, server editing,
+destructive-action cancellation, and cold-restart persistence. Its sanitized report and screenshots are
+written to `artifacts/e2e-electron/`. The Windows release preflight runs this harness automatically.
+
 For a slower full-service persistence pass, run:
 
 ```cmd

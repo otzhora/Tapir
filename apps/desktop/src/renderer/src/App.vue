@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from "vue";
-import { History as HistoryIcon, Server as ServerIcon } from "lucide-vue-next";
+import { History as HistoryIcon, LoaderCircle, Server as ServerIcon } from "lucide-vue-next";
 import type { CallHistoryEntry, HistoryFilter, NormalizedOperation, SaveAuthenticationRequest, ServerWithDefinition } from "@tapir/core";
 import AppHeader from "./components/AppHeader.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
@@ -26,6 +26,8 @@ const workspaceView = ref<"requests" | "serverConfiguration">("requests");
 const isCurlImportOpen = ref(false);
 const curlImportError = ref("");
 const isCurlImporting = ref(false);
+const isInitializing = ref(true);
+const requestWorkspace = ref<InstanceType<typeof RequestWorkspace> | null>(null);
 
 const {
   collapsedPanels,
@@ -55,9 +57,13 @@ const request = useOperationRequest({
 });
 
 onMounted(async () => {
-  await workspaceServers.loadInitialState();
-  await request.loadDrafts();
-  await loadHistory(true);
+  try {
+    await workspaceServers.loadInitialState();
+    await request.loadDrafts();
+    await loadHistory(true);
+  } finally {
+    isInitializing.value = false;
+  }
 });
 
 watch(workspaceServers.selectedServerId, () => {
@@ -190,6 +196,12 @@ async function saveAuthentication(input: Omit<SaveAuthenticationRequest, "server
   await request.refreshPreview();
 }
 
+async function sendActiveRequest(): Promise<void> {
+  const ready = await requestWorkspace.value?.savePendingAuthentication();
+  if (ready === false) return;
+  await request.callOperation();
+}
+
 async function deleteAuthentication(schemeKey: string): Promise<void> {
   const selected = workspaceServers.selectedServer.value;
   const tapir = window.tapir;
@@ -252,7 +264,12 @@ async function serverDeleted(serverId: string): Promise<void> {
       @import="importCurl"
     />
 
-    <main :class="['app-shell grid min-h-0 flex-1 text-[var(--tapir-text)]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-columns] duration-300 ease-out']" :style="shellStyle">
+    <div v-if="isInitializing" class="empty-state min-h-0 flex-1" role="status">
+      <LoaderCircle :size="28" class="animate-spin" />
+      <p>Loading workspace…</p>
+    </div>
+
+    <main v-else :class="['app-shell grid min-h-0 flex-1 text-[var(--tapir-text)]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-columns] duration-300 ease-out']" :style="shellStyle">
       <aside :class="[panelClass, 'grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden']">
         <div class="mb-4 grid grid-cols-2 gap-1 rounded-lg border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-control)] p-1" aria-label="Sidebar view">
           <button class="chrome-button justify-center" :class="sidebarView === 'servers' && 'is-active'" type="button" @click="sidebarView = 'servers'">
@@ -310,6 +327,7 @@ async function serverDeleted(serverId: string): Promise<void> {
         />
         <RequestWorkspace
           v-else
+          ref="requestWorkspace"
           :active-draft="request.activeDraft.value"
           :authentication="workspaceServers.selectedServer.value?.authentication ?? []"
           :active-request-tab="request.activeRequestTab.value"
@@ -326,22 +344,24 @@ async function serverDeleted(serverId: string): Promise<void> {
           :request-body-schema="request.requestBodySchema.value"
           :required-body-fields="request.requiredBodyFields.value"
           :request-preview="request.requestPreview.value"
+          :request-error="errorMessage"
           :request-tabs="request.requestTabs.value"
           :responses-schema="request.responsesSchema.value"
           :selected-content-types="request.selectedContentTypes.value"
           :selected-operation="workspaceServers.selectedOperation.value"
           :selected-server="workspaceServers.selectedServer.value"
           :validation-issues="request.validationIssues.value"
+          :save-authentication-handler="saveAuthentication"
           @add-header="request.addHeader"
           @add-parameter="request.addParameter"
-          @call-operation="request.callOperation"
+          @call-operation="sendActiveRequest"
           @close-draft="request.closeDraft"
           @close-drafts="request.closeDrafts"
           @copy-curl="request.copyCurl"
           @create-draft="request.isCustomSpace.value ? request.createCustomRequest() : workspaceServers.selectedOperation.value && request.createOpenApiRequest(workspaceServers.selectedOperation.value)"
+          @duplicate-draft="request.duplicateDraft"
           @remove-header="request.removeHeader"
           @remove-parameter="request.removeParameter"
-          @save-authentication="saveAuthentication"
           @delete-authentication="deleteAuthentication"
           @select-draft="request.selectDraft"
           @set-parameter="request.setParameterValue"

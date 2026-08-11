@@ -70,6 +70,9 @@ describe("desktop renderer app", () => {
     }));
     expect(wrapper.text()).toContain("200");
     expect(wrapper.findAll("textarea").some((textarea) => (textarea.element as HTMLTextAreaElement).value.includes("\"pets\""))).toBe(true);
+    await wrapper.findAll(".response-tab").find((tab) => tab.text().includes("Headers"))?.trigger("click");
+    expect(wrapper.text()).toContain("content-type");
+    expect(wrapper.text()).toContain("application/json");
     await wrapper.findAll("button").find((button) => button.text().includes("History"))?.trigger("click");
     await nextTick();
     expect(wrapper.text()).toContain("List pets");
@@ -82,6 +85,17 @@ describe("desktop renderer app", () => {
         parametersJson: expect.stringContaining("\"value\":\"10\"")
       })
     });
+  });
+
+  it("surfaces request failures beside Send", async () => {
+    vi.mocked(bridge.callOperation).mockRejectedValueOnce(new Error("The mock API is offline."));
+    const wrapper = mountApp();
+    await settle();
+    await wrapper.findAll("button").find((button) => button.text().includes("Send"))?.trigger("click");
+    await settle();
+
+    const alert = wrapper.find("[role='alert']");
+    expect(alert.text()).toContain("The mock API is offline.");
   });
 
   it("collapses and expands operation groups in the servers sidebar", async () => {
@@ -102,6 +116,25 @@ describe("desktop renderer app", () => {
     await petsGroup.trigger("click");
     expect(petsGroup.attributes("aria-expanded")).toBe("true");
     expect(petsGroup.element.parentElement?.textContent).toContain("List pets");
+  });
+
+  it("searches operations by method, path, summary, ID, and the slash shortcut", async () => {
+    const wrapper = mountApp();
+    await settle();
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true }));
+    const search = wrapper.find("input[aria-label='Search operations']");
+    expect(document.activeElement).toBe(search.element);
+
+    await search.setValue("createPet");
+    expect(wrapper.text()).toContain("1 of 2 operations");
+    expect(wrapper.text()).toContain("Create pet");
+    expect(wrapper.find("aside").findAll("button").filter((button) => button.text().includes("List pets"))).toHaveLength(0);
+
+    await search.setValue("DELETE /missing");
+    expect(wrapper.text()).toContain("No operations match");
+    await wrapper.find("button[aria-label='Clear operation search']").trigger("click");
+    expect(wrapper.text()).toContain("List pets");
   });
 
   it("adds a server with an explicit OpenAPI document URL", async () => {
@@ -248,6 +281,37 @@ describe("desktop renderer app", () => {
 
     expect(wrapper.findAll(".request-tab")).toHaveLength(0);
     expect(bridge.deleteRequestDraft).toHaveBeenCalledTimes(5);
+  });
+
+  it("duplicates and keyboard-renames requests from the labeled tab menu", async () => {
+    const wrapper = mountApp();
+    await settle();
+
+    await wrapper.find(".request-tab").trigger("contextmenu", { clientX: 40, clientY: 60 });
+    await nextTick();
+    let menu = document.body.querySelector<HTMLElement>("[aria-label='Request tab actions']")!;
+    expect(menu.textContent).toContain("Rename request");
+    expect(menu.textContent).toContain("Duplicate request");
+    const rename = Array.from(menu.querySelectorAll("button")).find((button) => button.textContent?.includes("Rename request")) as HTMLButtonElement;
+    expect(document.activeElement).toBe(rename);
+    rename.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    expect((document.activeElement as HTMLButtonElement).textContent).toContain("Duplicate request");
+    (document.activeElement as HTMLButtonElement).click();
+    await settle();
+
+    expect(bridge.createRequestDraft).toHaveBeenLastCalledWith(expect.objectContaining({
+      name: "List pets copy",
+      isNameManual: true,
+      parameters: [expect.objectContaining({ name: "limit" })]
+    }));
+    expect(wrapper.findAll(".request-tab")).toHaveLength(2);
+
+    await wrapper.findAll(".request-tab")[1]!.trigger("contextmenu", { clientX: 40, clientY: 60 });
+    await nextTick();
+    menu = document.body.querySelector<HTMLElement>("[aria-label='Request tab actions']")!;
+    (Array.from(menu.querySelectorAll("button")).find((button) => button.textContent?.includes("Rename request")) as HTMLButtonElement).click();
+    await nextTick();
+    expect(document.activeElement).toBe(wrapper.find("input[aria-label='Request name']").element);
   });
 
   it("imports an unmatched browser cURL request into the Request Sandbox", async () => {
@@ -400,7 +464,7 @@ describe("desktop renderer app", () => {
     expect(bridge.clearHistory).toHaveBeenCalledWith({ workspaceId: "workspace-1" });
   });
 
-  it("saves API key auth, keeps operation IPC secret-free, and reloads only configured state", async () => {
+  it("saves pending API key auth before Send, keeps IPC secret-free, and reloads only configured state", async () => {
     const wrapper = mountApp();
     await settle();
     await wrapper.findAll("button").find((button) => button.text().includes("Headers"))?.trigger("click");
@@ -408,14 +472,14 @@ describe("desktop renderer app", () => {
 
     expect(wrapper.text()).toContain("Required authentication declared by this operation");
     await wrapper.find("input[type='password']").setValue("renderer-secret");
-    await wrapper.findAll("button").find((button) => button.text() === "Save")?.trigger("click");
+    expect(wrapper.text()).toContain("Unsaved credential");
+    await wrapper.findAll("button").find((button) => button.text().includes("Send"))?.trigger("click");
     await settle();
 
     expect(bridge.saveAuthentication).toHaveBeenCalledWith(expect.objectContaining({ serverId: "server-1", schemeKey: "ApiKeyAuth", type: "apiKey", parameterName: "x-api-key", location: "header", secretValue: "renderer-secret" }));
-    expect(wrapper.text()).toContain("Credential configured");
+    expect(vi.mocked(bridge.saveAuthentication).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(bridge.callOperation).mock.invocationCallOrder[0]!);
+    expect(wrapper.text()).toContain("Credential saved");
     expect(JSON.stringify(vi.mocked(bridge.previewOperation).mock.calls)).not.toContain("renderer-secret");
-    await wrapper.findAll("button").find((button) => button.text().includes("Send"))?.trigger("click");
-    await settle();
     expect(JSON.stringify(vi.mocked(bridge.callOperation).mock.calls)).not.toContain("renderer-secret");
 
     wrapper.unmount();
@@ -425,6 +489,26 @@ describe("desktop renderer app", () => {
     await settle();
     expect(restarted.text()).toContain("Credential configured");
     expect(JSON.stringify(await bridge.getInitialState())).not.toContain("renderer-secret");
+  });
+
+  it("saves authentication on form submit and retains pending secrets when saving fails", async () => {
+    vi.mocked(bridge.saveAuthentication).mockRejectedValueOnce(new Error("Credential storage is unavailable."));
+    const wrapper = mountApp();
+    await settle();
+    await wrapper.findAll("button").find((button) => button.text().includes("Headers"))?.trigger("click");
+    const credential = wrapper.find("input[aria-label='Authentication credential']");
+    await credential.setValue("retry-secret");
+    await credential.element.closest("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle();
+
+    expect(wrapper.text()).toContain("Credential storage is unavailable.");
+    expect((credential.element as HTMLInputElement).value).toBe("retry-secret");
+    expect(bridge.callOperation).not.toHaveBeenCalled();
+
+    await credential.element.closest("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle();
+    expect((credential.element as HTMLInputElement).value).toBe("");
+    expect(wrapper.text()).toContain("Credential saved");
   });
 
   it("edits and deletes a server while saving variables outside the sidebar", async () => {

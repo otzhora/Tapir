@@ -84,7 +84,7 @@ function deleteEntry(id: string): void {
         <strong :class="entry.responseStatus && entry.responseStatus < 400 ? 'text-[var(--tapir-success)]' : 'text-[var(--tapir-danger)]'">{{ entry.responseStatus ?? "ERR" }}</strong>
         <span class="truncate"><strong>{{ entry.requestMethod }}</strong> {{ entry.draftName ?? entry.operationId ?? "Standalone request" }}</span>
         <span class="flex gap-1">
-          <button class="icon-button opacity-0 group-hover:opacity-100" title="Delete history entry" type="button" @click.stop="deleteEntry(entry.id)"><Trash2 :size="13" /></button>
+          <button class="icon-button opacity-40 group-hover:opacity-100 focus:opacity-100" :aria-label="`Delete ${entry.draftName ?? entry.requestUrl} from history`" title="Delete history entry" type="button" @click.stop="deleteEntry(entry.id)"><Trash2 :size="13" /></button>
           <RotateCcw :size="14" :class="['mt-1', mutedTextClass]" />
         </span>
         <small :class="['col-span-2 col-start-2 truncate', mutedTextClass]">{{ entry.requestUrl }}</small>

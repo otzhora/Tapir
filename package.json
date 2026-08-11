@@ -14,6 +14,7 @@
     "dogfood:public": "node scripts/dogfood-public-apis.mjs",
     "dogfood:service": "node scripts/dogfood-public-service-runner.mjs",
     "dogfood:auth": "node scripts/dogfood-fixture-auth-runner.mjs",
+    "e2e:desktop": "node scripts/e2e-electron-runner.mjs",
     "build": "npm run build --workspaces",
     "package:win": "node scripts/package-windows.mjs",
     "release:win": "node scripts/release-windows.mjs",
@@ -25,6 +26,7 @@
     "typecheck": "npm run typecheck --workspaces"
   },
   "devDependencies": {
+    "playwright-core": "^1.62.1",
     "typescript": "^5.5.4",
     "vitest": "^3.2.6"
   },
