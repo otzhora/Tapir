@@ -27,6 +27,8 @@ try {
     "--x64",
     "--prepackaged",
     portableDir,
+    "--publish",
+    "never",
     "--config",
     join(root, "electron-builder.yml"),
     `--config.extraMetadata.version=${version}`
