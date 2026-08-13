@@ -5,11 +5,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { npmCommand } from "./npm-command.mjs";
+import { resolveReleaseVersion } from "./release-version.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const artifactsDir = join(root, "artifacts");
-const rootPackage = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-const version = rootPackage.version;
+const version = await resolveReleaseVersion();
 if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
   throw new Error(`The root package.json has an invalid release version: ${String(version)}`);
 }
@@ -35,6 +35,7 @@ try {
   await cp(join(root, "node_modules", "electron", "dist"), outputDir, { recursive: true });
   await mkdir(join(outputDir, "resources", "app", "node_modules"), { recursive: true });
   await cp(join(root, "apps", "desktop", "out"), join(outputDir, "resources", "app", "out"), { recursive: true });
+  await cp(join(root, "apps", "desktop", "build"), join(outputDir, "resources", "app", "build"), { recursive: true });
   await cp(join(root, "node_modules", "better-sqlite3"), join(outputDir, "resources", "app", "node_modules", "better-sqlite3"), { recursive: true });
   await writeFile(join(outputDir, "resources", "app", "package.json"), JSON.stringify({
     name: "tapir",
@@ -43,6 +44,12 @@ try {
     type: "module",
     main: "out/main/index.js"
   }, null, 2), "utf8");
+  await writeFile(join(outputDir, "resources", "app-update.yml"), [
+    "provider: github",
+    "owner: otzhora",
+    "repo: Tapir",
+    "updaterCacheDirName: tapir-updater"
+  ].join("\n") + "\n", "utf8");
   await writeFile(join(outputDir, "PACKAGING.txt"), [
     "Tapir portable Windows build",
     "Launch Tapir.exe.",
@@ -72,6 +79,7 @@ try {
   await writeFile(checksumsPath, `${sha256}  ${packageName}.zip\n`, "utf8");
   await log(`Portable directory: ${outputDir}\nZip artifact: ${zipPath}\nSHA-256: ${sha256}\nManifest: ${manifestPath}\nTapir Windows packaging completed ${new Date().toISOString()}\n`);
   console.log(`Tapir Windows artifacts created:\n${outputDir}\n${zipPath}\n${manifestPath}`);
+  runNpm(["run", "package:installer:win"]);
 } catch (error) {
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
   await log(`PACKAGING FAILED\n${message}\n`);

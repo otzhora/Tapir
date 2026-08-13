@@ -139,6 +139,7 @@ async function exerciseFirstRun(window) {
   await window.getByRole("button", { name: "Send", exact: true }).click();
   await window.getByText("tapir-dotnet-logistics-api", { exact: false }).first().waitFor({ state: "visible" });
 
+  await window.getByLabel("Search operations").fill("");
   const dotnetServerRow = window.getByTitle(/^Tapir \.NET Logistics API/).locator("..");
   await dotnetServerRow.getByTitle("Configure server").click();
   const nameInput = window.getByPlaceholder("Example API");
@@ -151,11 +152,11 @@ async function exerciseFirstRun(window) {
 }
 
 async function exerciseRestart(window) {
-  const serverCount = window.getByTitle("Loaded servers");
-  await serverCount.waitFor({ state: "visible" });
-  assert.match(await serverCount.innerText(), /2/, "Both servers were not restored after restart.");
+  await window.getByText("Tapir Node Adoption API", { exact: true }).first().waitFor({ state: "visible" });
+  await window.getByText("E2E .NET API", { exact: true }).first().waitFor({ state: "visible" });
+  await window.getByTitle(/^Tapir Node Adoption API/).click();
   await window.getByLabel("Search operations").fill("getApiKeyIdentity");
-  await window.getByRole("button", { name: /Verify an API key/ }).click();
+  await window.getByTitle(/^GET \/auth\/api-key/).last().click();
   await window.getByRole("button", { name: "Request history", exact: true }).click();
   const restoredRequest = window.locator("[title='Restore this run in the current tab']").first();
   await restoredRequest.waitFor({ state: "visible" });

@@ -48,6 +48,17 @@ describe("desktop renderer app", () => {
     expect(bridge.closeWindow).toHaveBeenCalledOnce();
   });
 
+  it("checks GitHub Releases from the title-bar update center", async () => {
+    const wrapper = mountApp();
+    await settle();
+
+    await wrapper.find("button[aria-label='App updates']").trigger("click");
+    expect(wrapper.text()).toContain("Current version 0.0.1-20260814");
+    await wrapper.findAll("button").find((button) => button.text().includes("Check now"))?.trigger("click");
+
+    expect(bridge.checkForUpdates).toHaveBeenCalledOnce();
+  });
+
   it("loads a server, previews an operation, sends it, and restores it from history", async () => {
     const wrapper = mountApp();
     await settle();
@@ -664,6 +675,11 @@ function createMockBridge(): MockTapirBridge {
     minimizeWindow: vi.fn(),
     toggleMaximizeWindow: vi.fn(),
     closeWindow: vi.fn(),
+    getUpdateState: vi.fn(async () => ({ currentVersion: "0.0.1-20260814", status: "idle" as const })),
+    checkForUpdates: vi.fn(async () => ({ currentVersion: "0.0.1-20260814", status: "up-to-date" as const })),
+    downloadUpdate: vi.fn(async () => ({ currentVersion: "0.0.1-20260814", status: "downloaded" as const })),
+    installUpdate: vi.fn(async () => undefined),
+    onUpdateState: vi.fn(() => () => undefined),
     getInitialState: vi.fn(async () => ({ workspace, servers: [{ ...serverWithDefinition, authentication: state.authentication }] })),
     addServer: vi.fn(),
     refreshServerSchema: vi.fn(),

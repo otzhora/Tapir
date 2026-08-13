@@ -49,7 +49,7 @@ Electron/Vite config bundling can fail inside the Codex filesystem sandbox with 
 
 ## Windows package
 
-Build the self-contained Windows x64 portable folder and ZIP with:
+Build the Windows x64 install wizard, updater metadata, portable folder, and ZIP with:
 
 ```cmd
 scripts\tapir-package-windows.cmd
@@ -61,9 +61,9 @@ Then verify the exact packaged executable in a clean temporary profile:
 scripts\tapir-smoke-packaged-windows.cmd
 ```
 
-Versioned artifacts are written to `artifacts/Tapir-<version>-win32-x64/` and `artifacts/Tapir-<version>-win32-x64.zip`, alongside a release manifest and SHA-256 checksum. Packaging and smoke-test logs remain under `artifacts/` when a command fails. See [Windows Packaging](./docs/windows-packaging.md) for the verification scope and release prerequisites.
+The install wizard and GitHub updater metadata are written to `artifacts/installer/`. Versioned portable artifacts are written to `artifacts/Tapir-<version>-win32-x64/` and `artifacts/Tapir-<version>-win32-x64.zip`, alongside a release manifest and SHA-256 checksum. Packaging and smoke-test logs remain under `artifacts/` when a command fails. See [Windows Packaging](./docs/windows-packaging.md) for the verification and publication flow.
 
-Before publishing an alpha build from a clean worktree, run the full release gate:
+Before publishing a release build from a clean worktree, run the full release gate:
 
 ```cmd
 scripts\tapir-release-windows.cmd

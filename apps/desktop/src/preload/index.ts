@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  AppUpdateState,
   CallOperationRequest,
   CallCustomRequestRequest,
   CreateRequestDraftRequest,
@@ -27,6 +28,15 @@ const api = {
   minimizeWindow: () => ipcRenderer.send("tapir:window-minimize"),
   toggleMaximizeWindow: () => ipcRenderer.send("tapir:window-toggle-maximize"),
   closeWindow: () => ipcRenderer.send("tapir:window-close"),
+  getUpdateState: () => invoke("tapir:getUpdateState", undefined),
+  checkForUpdates: () => invoke("tapir:checkForUpdates", undefined),
+  downloadUpdate: () => invoke("tapir:downloadUpdate", undefined),
+  installUpdate: () => invoke("tapir:installUpdate", undefined),
+  onUpdateState: (listener: (state: AppUpdateState) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: AppUpdateState) => listener(state);
+    ipcRenderer.on("tapir:update-state", handler);
+    return () => { ipcRenderer.removeListener("tapir:update-state", handler); };
+  },
   getInitialState: () => invoke("tapir:getInitialState", undefined),
   addServer: (baseUrl: string, specUrl?: string) => invoke("tapir:addServer", { baseUrl, specUrl }),
   refreshServerSchema: (serverId: string) => invoke("tapir:refreshServerSchema", { serverId }),

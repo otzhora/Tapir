@@ -28,7 +28,7 @@ const workspaceAliases = {
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: workspacePackages })],
+    plugins: [externalizeDepsPlugin({ exclude: [...workspacePackages, "electron-updater"] })],
     build: {
       rollupOptions: {
         external: ["better-sqlite3"]

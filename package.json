@@ -1,6 +1,9 @@
 {
   "name": "tapir",
-  "version": "0.1.0",
+  "version": "0.0.1",
+  "description": "A local-first Windows API workspace for OpenAPI-driven requests.",
+  "author": "Tapir contributors",
+  "repository": "github:otzhora/Tapir",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -17,6 +20,7 @@
     "e2e:desktop": "node scripts/e2e-electron-runner.mjs",
     "build": "npm run build --workspaces",
     "package:win": "node scripts/package-windows.mjs",
+    "package:installer:win": "node scripts/package-installer-windows.mjs",
     "release:win": "node scripts/release-windows.mjs",
     "smoke:packaged:win": "node scripts/smoke-packaged-windows.mjs",
     "rebuild:native:electron": "npm --workspace @tapir/desktop run rebuild:native",
@@ -26,6 +30,7 @@
     "typecheck": "npm run typecheck --workspaces"
   },
   "devDependencies": {
+    "electron-builder": "^26.0.12",
     "playwright-core": "^1.62.1",
     "typescript": "^5.5.4",
     "vitest": "^3.2.6"

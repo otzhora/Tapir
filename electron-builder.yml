@@ -1,0 +1,29 @@
+appId: io.github.otzhora.tapir
+productName: Tapir
+copyright: Copyright © 2026 Tapir contributors
+directories:
+  output: artifacts/installer
+  buildResources: apps/desktop/build
+win:
+  icon: apps/desktop/build/icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: Tapir-Setup-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Tapir
+  uninstallDisplayName: Tapir
+publish:
+  provider: github
+  owner: otzhora
+  repo: Tapir
+  releaseType: release
+generateUpdatesFilesForAllChannels: true
+compression: normal
+npmRebuild: false

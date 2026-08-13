@@ -34,7 +34,7 @@ try {
   const summary = {
     ok: true,
     verifiedAt: new Date().toISOString(),
-    verification: ["typecheck", "tests", "fixture authentication", "Electron E2E", "packaging", "packaged smoke", "git diff --check"],
+    verification: ["typecheck", "tests", "fixture authentication", "Electron E2E", "NSIS installer and update metadata", "packaging", "packaged smoke", "git diff --check"],
     ...manifest
   };
   await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");

@@ -6,7 +6,7 @@ Use this checklist to validate Tapir against real work without turning an explor
 
 1. Build and smoke-test the exact alpha candidate with `scripts\tapir-release-windows.cmd`.
 2. Confirm `sourceDirty` is `false` in `artifacts/release-summary.json`.
-3. Extract the versioned ZIP into a fresh directory and start with a new Tapir profile when validating first-run behavior.
+3. Run the versioned Setup executable and start with a new Tapir profile when validating first-run behavior; use the ZIP only for portable-build checks.
 4. Record only the Tapir version, source revision, Windows version, API name, public specification URL, and sanitized observations.
 
 The repeatable public compatibility tranche can be run with:

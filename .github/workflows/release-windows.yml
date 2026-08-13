@@ -1,0 +1,49 @@
+name: Release Windows build
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Verify tag matches package version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match package version v$version."
+          }
+      - run: npm ci
+      - name: Set dated artifact version
+        shell: pwsh
+        run: |
+          $releaseDate = [DateTime]::UtcNow.ToString("yyyyMMdd")
+          "TAPIR_RELEASE_DATE=$releaseDate" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Build and verify release
+        run: scripts\tapir-release-windows.cmd
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(
+            (Get-ChildItem artifacts\installer -File | Where-Object { $_.Name -ne "builder-debug.yml" } | ForEach-Object { $_.FullName })
+            (Resolve-Path artifacts\Tapir-*-win32-x64.zip).Path
+            (Resolve-Path artifacts\release-manifest.json).Path
+            (Resolve-Path artifacts\release-summary.json).Path
+            (Resolve-Path artifacts\SHA256SUMS.txt).Path
+          )
+          gh release create $env:GITHUB_REF_NAME $assets --generate-notes --title "Tapir $env:GITHUB_REF_NAME"

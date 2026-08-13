@@ -26,6 +26,10 @@ export function parseTapirIpcRequest<Channel extends TapirIpcChannel>(
 
 function parseByChannel(channel: TapirIpcChannel, value: unknown): unknown {
   switch (channel) {
+    case "tapir:getUpdateState":
+    case "tapir:checkForUpdates":
+    case "tapir:downloadUpdate":
+    case "tapir:installUpdate":
     case "tapir:getInitialState":
       if (value !== undefined) invalid(channel);
       return undefined;

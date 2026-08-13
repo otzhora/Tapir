@@ -146,6 +146,10 @@ button:disabled {
   -webkit-app-region: no-drag;
 }
 
+.update-popover {
+  -webkit-app-region: no-drag;
+}
+
 .window-controls {
   display: grid;
   height: 44px;

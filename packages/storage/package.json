@@ -1,6 +1,6 @@
 {
   "name": "@tapir/storage",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "main": "dist/packages/storage/src/index.js",
@@ -11,7 +11,7 @@
     "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tapir/core": "0.1.0",
+    "@tapir/core": "0.0.1",
     "better-sqlite3": "^12.11.1",
     "umzug": "^3.8.3"
   },

@@ -36,6 +36,24 @@ export interface InitialStateResponse {
   servers: ServerWithDefinition[];
 }
 
+export type AppUpdateStatus =
+  | "disabled"
+  | "idle"
+  | "checking"
+  | "up-to-date"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "error";
+
+export interface AppUpdateState {
+  currentVersion: string;
+  status: AppUpdateStatus;
+  availableVersion?: string;
+  downloadPercent?: number;
+  message?: string;
+}
+
 export interface AddServerRequest {
   baseUrl: string;
   specUrl?: string;
@@ -171,6 +189,22 @@ export interface CallCustomRequestRequest extends PreviewCustomRequestRequest {
 }
 
 export interface TapirIpcContract {
+  "tapir:getUpdateState": {
+    request: void;
+    response: AppUpdateState;
+  };
+  "tapir:checkForUpdates": {
+    request: void;
+    response: AppUpdateState;
+  };
+  "tapir:downloadUpdate": {
+    request: void;
+    response: AppUpdateState;
+  };
+  "tapir:installUpdate": {
+    request: void;
+    response: void;
+  };
   "tapir:getInitialState": {
     request: void;
     response: InitialStateResponse;

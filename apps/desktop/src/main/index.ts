@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
+import { autoUpdater } from "electron-updater";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -16,6 +17,7 @@ import { assertTrustedRendererUrl, validateDevRendererUrl } from "./ipcSecurity"
 import { toIpcPayload } from "./ipcSerialization";
 import { SafeStorageAuthProfileRepository } from "./safeStorageAuthProfileRepository";
 import { SafeStorageHistoryRepository, SafeStorageRequestDraftRepository } from "./safeStorageDataRepositories";
+import { TapirAppUpdater, type ElectronUpdaterLike } from "./appUpdater";
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -28,6 +30,10 @@ if (process.env.TAPIR_E2E_USER_DATA) {
 
 let tapir: TapirApplicationService;
 let database: SqliteDatabase | null = null;
+let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
+let updates: TapirAppUpdater;
 const trustedRendererUrls = new Map<number, string>();
 
 async function createServices() {
@@ -68,7 +74,7 @@ function electronBetterSqliteBindingPath(): string {
   return nativeBinding;
 }
 
-async function createWindow(show = true): Promise<BrowserWindow> {
+async function createWindow(show = true, closeToTray = true): Promise<BrowserWindow> {
   const devRendererUrl = process.env.ELECTRON_RENDERER_URL
     ? validateDevRendererUrl(process.env.ELECTRON_RENDERER_URL, app.isPackaged)
     : null;
@@ -81,6 +87,7 @@ async function createWindow(show = true): Promise<BrowserWindow> {
     title: "Tapir",
     autoHideMenuBar: true,
     frame: false,
+    icon: appIconPath(),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
       sandbox: true,
@@ -97,6 +104,16 @@ async function createWindow(show = true): Promise<BrowserWindow> {
     if (targetUrl !== rendererUrl) event.preventDefault();
   });
   window.on("closed", () => trustedRendererUrls.delete(webContentsId));
+  if (closeToTray && !process.env.TAPIR_E2E_USER_DATA) {
+    window.on("close", (event) => {
+      if (isQuitting) return;
+      event.preventDefault();
+      window.hide();
+    });
+    window.on("closed", () => {
+      if (mainWindow === window) mainWindow = null;
+    });
+  }
 
   if (devRendererUrl) {
     await window.loadURL(devRendererUrl);
@@ -106,12 +123,47 @@ async function createWindow(show = true): Promise<BrowserWindow> {
   return window;
 }
 
+function appIconPath(trayIcon = false): string {
+  return join(app.getAppPath(), "build", trayIcon ? "tray-icon.png" : "icon.png");
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    void createWindow().then((window) => {
+      mainWindow = window;
+    });
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray(): void {
+  const image = nativeImage.createFromPath(appIconPath(true));
+  tray = new Tray(image);
+  tray.setToolTip(`Tapir ${app.getVersion()}`);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Open Tapir", click: showMainWindow },
+    { label: "Check for updates", click: () => { showMainWindow(); void updates.check(); } },
+    { type: "separator" },
+    { label: "Quit Tapir", click: () => { isQuitting = true; app.quit(); } }
+  ]));
+  tray.on("double-click", showMainWindow);
+}
+
 void bootstrap();
 
 async function bootstrap(): Promise<void> {
   try {
     await app.whenReady();
     tapir = await createServices();
+    updates = new TapirAppUpdater(
+      autoUpdater as ElectronUpdaterLike,
+      app.getVersion(),
+      app.isPackaged,
+      (state) => BrowserWindow.getAllWindows().forEach((window) => window.webContents.send("tapir:update-state", state))
+    );
     if (process.env.TAPIR_PACKAGED_SMOKE === "1") {
       registerIpc();
       await runPackagedSmoke();
@@ -119,9 +171,11 @@ async function bootstrap(): Promise<void> {
       return;
     }
     registerIpc();
-    await createWindow();
+    createTray();
+    mainWindow = await createWindow();
+    setTimeout(() => { void updates.check(); }, 2_000);
     app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+      showMainWindow();
     });
   } catch (error) {
     const message = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -131,11 +185,8 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
-
 app.on("before-quit", () => {
+  isQuitting = true;
   if (!database?.open) return;
   database.close();
   database = null;
@@ -145,7 +196,7 @@ async function runPackagedSmoke(): Promise<void> {
   if (!app.isPackaged) throw new Error("Packaged smoke mode requires a packaged Electron application.");
   const baseUrl = process.env.TAPIR_SMOKE_BASE_URL;
   if (!baseUrl) throw new Error("TAPIR_SMOKE_BASE_URL is required in packaged smoke mode.");
-  const smokeWindow = await createWindow(false);
+  const smokeWindow = await createWindow(false, false);
   const rendererUrl = smokeWindow.webContents.getURL();
   const added = await tapir.addServer({ baseUrl });
   const operation = added.normalized.operations.find((candidate) => candidate.operationId === "getHealth")
@@ -188,6 +239,12 @@ function registerIpc(): void {
   ipcMain.on("tapir:window-minimize", (event) => withTrustedWindow(event, (window) => window.minimize()));
   ipcMain.on("tapir:window-toggle-maximize", (event) => withTrustedWindow(event, (window) => window.isMaximized() ? window.unmaximize() : window.maximize()));
   ipcMain.on("tapir:window-close", (event) => withTrustedWindow(event, (window) => window.close()));
+  handle("tapir:getUpdateState", async () => updates.getState());
+  handle("tapir:checkForUpdates", async () => updates.check());
+  handle("tapir:downloadUpdate", async () => updates.download());
+  handle("tapir:installUpdate", async () => {
+    setTimeout(() => updates.install(), 0);
+  });
   handle("tapir:getInitialState", async () => tapir.getInitialState());
   handle("tapir:addServer", async (input) => tapir.addServer(input));
   handle("tapir:refreshServerSchema", async (input) => tapir.refreshServerSchema(input));
