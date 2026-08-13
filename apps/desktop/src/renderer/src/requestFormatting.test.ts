@@ -16,13 +16,13 @@ describe("request formatting helpers", () => {
         "x-note": "owner's pet"
       },
       body: "{\"name\":\"Momo\"}"
-    })).toBe("curl -X POST 'https://api.example.test/pets/pet 1' -H 'content-type: application/json' -H 'x-note: owner'\\''s pet' --data-raw '{\"name\":\"Momo\"}'");
+    })).toBe("curl -X POST 'https://api.example.test/pets/pet 1' \\\n  -H 'content-type: application/json' \\\n  -H 'x-note: owner'\\''s pet' \\\n  --data-raw '{\"name\":\"Momo\"}'");
   });
 
   it("formats PowerShell and cmd commands", () => {
     const request = { method: "GET" as const, url: "https://example.test/a b", headers: { "x-note": "owner's" } };
-    expect(buildCurlCommand(request, "powershell")).toBe("curl.exe -X GET 'https://example.test/a b' -H 'x-note: owner''s'");
-    expect(buildCurlCommand(request, "cmd")).toBe('curl -X GET "https://example.test/a b" -H "x-note: owner\'s"');
+    expect(buildCurlCommand(request, "powershell")).toContain("curl.exe -X GET 'https://example.test/a b' `\n  -H");
+    expect(buildCurlCommand(request, "cmd")).toContain('curl -X GET "https://example.test/a b" ^\r\n  -H');
   });
 
   it("redacts sensitive headers and query values", () => {

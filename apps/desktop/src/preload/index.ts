@@ -24,6 +24,9 @@ function invoke<Channel extends TapirIpcChannel>(
 }
 
 const api = {
+  minimizeWindow: () => ipcRenderer.send("tapir:window-minimize"),
+  toggleMaximizeWindow: () => ipcRenderer.send("tapir:window-toggle-maximize"),
+  closeWindow: () => ipcRenderer.send("tapir:window-close"),
   getInitialState: () => invoke("tapir:getInitialState", undefined),
   addServer: (baseUrl: string, specUrl?: string) => invoke("tapir:addServer", { baseUrl, specUrl }),
   refreshServerSchema: (serverId: string) => invoke("tapir:refreshServerSchema", { serverId }),

@@ -3,17 +3,17 @@ import type { CollapsedPanels } from "../types";
 
 export function useResizablePanels() {
   const leftWidth = ref(320);
-  const responseHeight = ref(260);
+  const responseHeight = ref(320);
   const isResizingLayout = ref(false);
   const collapsedPanels = reactive<CollapsedPanels>({ operations: false, response: false });
   let activeCleanup: (() => void) | null = null;
 
   const shellStyle = computed(() => ({
-    gridTemplateColumns: `${leftWidth.value}px 6px minmax(260px, 1fr)`
+    gridTemplateColumns: `${leftWidth.value}px 1px minmax(260px, 1fr)`
   }));
 
   const responseStyle = computed(() => ({
-    gridTemplateRows: `minmax(280px, 1fr) 6px ${collapsedPanels.response ? 44 : responseHeight.value}px`
+    gridTemplateRows: `minmax(280px, 1fr) 1px ${collapsedPanels.response ? 44 : responseHeight.value}px`
   }));
 
   function startColumnResize(event: MouseEvent): void {

@@ -1,40 +1,29 @@
 <script setup lang="ts">
-import { Activity, Server, Sparkles } from "lucide-vue-next";
+import { Minus, Square, X } from "lucide-vue-next";
 import type { ServerWithDefinition, Workspace } from "@tapir/core";
 
 defineProps<{
-  operationsCount: number;
   selectedServer: ServerWithDefinition | null;
-  serversCount: number;
   workspace: Workspace | null;
 }>();
 
+function minimizeWindow(): void { window.tapir?.minimizeWindow(); }
+function toggleMaximizeWindow(): void { window.tapir?.toggleMaximizeWindow(); }
+function closeWindow(): void { window.tapir?.closeWindow(); }
 </script>
 
 <template>
-  <header class="app-titlebar grid h-11 shrink-0 grid-cols-[auto_1fr_auto] items-center border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-panel-strong)] text-[13px] text-[var(--tapir-text-soft)] shadow-[var(--tapir-header-shadow)]">
-    <div class="flex min-w-0 items-center gap-2 px-2">
-      <div class="grid size-6 shrink-0 place-items-center rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-control-hover)] text-[var(--tapir-accent)] shadow-[var(--tapir-icon-inset-shadow)]">
-        <Sparkles :size="14" />
-      </div>
-      <strong class="truncate text-[14px] text-[var(--tapir-text-strong)]">Tapir</strong>
-    </div>
+  <header class="app-titlebar grid h-11 shrink-0 grid-cols-[138px_1fr_138px] items-center border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-panel-strong)] text-[13px] text-[var(--tapir-text-soft)] shadow-[var(--tapir-header-shadow)]">
+    <strong class="truncate px-3 text-[14px] text-[var(--tapir-text-strong)]">Tapir</strong>
 
-    <div class="mx-auto flex max-w-[680px] min-w-0 items-center justify-center gap-2 px-3 text-[var(--tapir-text-muted)]">
-      <Server :size="15" class="shrink-0 text-[var(--tapir-accent)]" />
-      <span class="truncate text-[var(--tapir-text)]">{{ selectedServer?.server.name ?? workspace?.name ?? "Local Workspace" }}</span>
-      <span class="hidden truncate text-[var(--tapir-text-muted)] lg:inline">{{ selectedServer?.server.baseUrl ?? "Add an OpenAPI server to begin" }}</span>
+    <div class="mx-auto flex max-w-[720px] min-w-0 items-center justify-center gap-2 px-3">
+      <strong class="truncate text-[var(--tapir-text-soft)]">{{ selectedServer?.server.name ?? workspace?.name ?? "Local Workspace" }}</strong>
+      <span class="hidden truncate text-[var(--tapir-text-subtle)] lg:inline">{{ selectedServer?.server.baseUrl ?? "Add an OpenAPI server to begin" }}</span>
     </div>
-
-    <div class="mr-[138px] flex items-center justify-end gap-2 px-3">
-      <span class="status-pill" title="Loaded servers">
-        <Server :size="13" />
-        {{ serversCount }}
-      </span>
-      <span class="status-pill" title="Loaded operations">
-        <Activity :size="13" />
-        {{ operationsCount }}
-      </span>
+    <div class="window-controls">
+      <button type="button" aria-label="Minimize window" title="Minimize" @click="minimizeWindow"><Minus :size="16" /></button>
+      <button type="button" aria-label="Maximize window" title="Maximize" @click="toggleMaximizeWindow"><Square :size="12" /></button>
+      <button class="is-close" type="button" aria-label="Close window" title="Close" @click="closeWindow"><X :size="16" /></button>
     </div>
   </header>
 </template>

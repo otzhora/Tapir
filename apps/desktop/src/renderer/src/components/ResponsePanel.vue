@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { ChevronDown, History, SquarePlus } from "lucide-vue-next";
+import { Braces, ChevronDown, Clock3, FileText, SquarePlus } from "lucide-vue-next";
 import type { CallHistoryEntry, CallOperationResponse } from "@tapir/core";
 import JsonCodeEditor from "./JsonCodeEditor.vue";
 
@@ -20,6 +20,15 @@ const activeTab = ref<"body" | "headers">("body");
 const historyOpen = ref(false);
 const historyMenuRoot = ref<HTMLElement | null>(null);
 const responseHeaders = computed(() => Object.entries(props.responseView?.response.headers ?? {}).sort(([left], [right]) => left.localeCompare(right)));
+const responseSize = computed(() => formatBytes(new TextEncoder().encode(props.responseView?.response.body ?? "").byteLength));
+const responseStatusLabel = computed(() => {
+  const status = props.responseView?.response.status;
+  if (!status) return "";
+  if (status < 300) return "Success";
+  if (status < 400) return "Redirect";
+  if (status < 500) return "Client error";
+  return "Server error";
+});
 watch(() => props.responseView, () => { activeTab.value = "body"; });
 watch(() => props.collapsed, (collapsed) => { if (collapsed) historyOpen.value = false; });
 
@@ -60,14 +69,19 @@ function formatRunDate(value: string): string {
   const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
   return sameDay ? `Today, ${time}` : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
+
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
 </script>
 
 <template>
-  <section class="min-h-0 overflow-hidden border-t border-[var(--tapir-border)] bg-[var(--tapir-bg-panel-soft)] backdrop-blur-xl">
-    <header class="relative z-20 flex h-11 items-center justify-between border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-panel-strong)] px-4 backdrop-blur-xl">
-      <div class="flex h-full items-center gap-3">
-        <button class="flex items-center gap-2 font-bold text-[var(--tapir-text-soft)]" @click="emit('collapse', !collapsed)">
-          <ChevronDown :class="['transition-transform', collapsed && '-rotate-90']" :size="17" />
+  <section class="response-panel min-h-0 overflow-hidden border-t border-[var(--tapir-border)] bg-[var(--tapir-bg-panel-soft)] backdrop-blur-xl">
+    <header class="response-header">
+      <div class="flex h-full min-w-0 items-center gap-3">
+        <button class="response-title" type="button" @click="emit('collapse', !collapsed)">
           Response
         </button>
         <template v-if="!collapsed">
@@ -77,7 +91,7 @@ function formatRunDate(value: string): string {
           </template>
           <div ref="historyMenuRoot" class="relative flex h-full items-center" @keydown.esc.stop="historyOpen = false">
             <button
-              class="icon-button h-8 w-8"
+              class="response-history-button"
               :class="historyOpen && 'border-[var(--tapir-border-strong)] bg-[var(--tapir-bg-control-active)] text-[var(--tapir-text-strong)]'"
               type="button"
               aria-label="Request history"
@@ -86,7 +100,7 @@ function formatRunDate(value: string): string {
               title="Request history"
               @click="historyOpen = !historyOpen"
             >
-              <History :size="17" />
+              History <ChevronDown :class="['transition-transform', historyOpen && 'rotate-180']" :size="14" />
             </button>
 
             <div v-if="historyOpen" class="absolute left-0 top-[38px] z-30 w-[390px] overflow-hidden rounded-xl border border-[var(--tapir-border-strong)] bg-[var(--tapir-bg-panel-opaque)] p-2 shadow-2xl" role="menu" aria-label="Request history runs">
@@ -118,15 +132,22 @@ function formatRunDate(value: string): string {
           </div>
         </template>
       </div>
-      <span v-if="responseView" :class="['font-extrabold', responseView.response.status < 400 ? 'text-[var(--tapir-success)]' : 'text-[var(--tapir-danger)]']">{{ responseView.response.status }} · {{ responseView.response.durationMs }} ms</span>
+      <div v-if="responseView" class="response-summary">
+        <span :class="['response-status', responseView.response.status < 400 ? 'is-success' : 'is-error']">
+          {{ responseView.response.status }} <span>{{ responseStatusLabel }}</span>
+        </span>
+        <span class="response-stat"><Clock3 :size="13" /> {{ responseView.response.durationMs }} ms</span>
+        <span class="response-stat"><FileText :size="13" /> {{ responseSize }}</span>
+      </div>
     </header>
-    <div v-if="!collapsed" class="h-[calc(100%-44px)] overflow-auto p-4">
+    <div v-if="!collapsed" class="response-content">
       <JsonCodeEditor
         v-if="responseView && activeTab === 'body'"
+        class="h-full"
         :model-value="prettyBody"
         :editable="false"
         :language="responseLanguage"
-        min-height="180px"
+        min-height="100%"
         :title="responseLanguage === 'json' ? 'Response JSON' : 'Response body'"
       />
       <div v-else-if="responseView" class="overflow-hidden rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)]">
@@ -136,7 +157,11 @@ function formatRunDate(value: string): string {
         </div>
         <div v-if="responseHeaders.length === 0" class="empty-state min-h-[140px]">No response headers.</div>
       </div>
-      <div v-else class="empty-state h-full min-h-[180px]">Enter request details and click Send to get a response.</div>
+      <div v-else class="response-empty">
+        <span><Braces :size="22" /></span>
+        <strong>Your response will appear here</strong>
+        <p>Configure the request above, then click Send.</p>
+      </div>
     </div>
   </section>
 </template>

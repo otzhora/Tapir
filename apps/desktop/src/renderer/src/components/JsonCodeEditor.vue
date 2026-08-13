@@ -2,10 +2,12 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { AlertCircle, Search } from "lucide-vue-next";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
-import { linter, lintGutter } from "@codemirror/lint";
+import { linter } from "@codemirror/lint";
 import { openSearchPanel } from "@codemirror/search";
 import { EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import { basicSetup } from "codemirror";
 
 type EditorLanguage = "json" | "text" | "curl";
@@ -65,15 +67,75 @@ const editorTheme = EditorView.theme({
     lineHeight: "1.65"
   },
   ".cm-content": {
-    padding: "12px 0"
+    padding: "13px 0",
+    caretColor: "var(--tapir-accent)"
   },
   ".cm-line": {
-    padding: "0 14px"
+    padding: "0 7px"
   },
   ".cm-gutters": {
-    backgroundColor: "rgba(255, 255, 255, 0.025)",
-    color: "var(--tapir-text-subtle)",
+    backgroundColor: "rgba(255, 255, 255, 0.018)",
+    color: "#73777f",
     borderRight: "1px solid var(--tapir-border)"
+  },
+  ".cm-foldGutter .cm-gutterElement": {
+    display: "flex",
+    boxSizing: "border-box",
+    width: "18px !important",
+    minWidth: "18px !important",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0 !important",
+    color: "var(--tapir-text-muted)",
+    fontSize: "0",
+    fontWeight: "800",
+    lineHeight: "1"
+  },
+  ".cm-foldGutter": {
+    boxSizing: "border-box",
+    flex: "0 0 18px !important",
+    width: "18px !important",
+    minWidth: "18px !important",
+    maxWidth: "18px !important",
+    overflow: "hidden"
+  },
+  ".cm-foldGutter .cm-gutterElement span": {
+    display: "grid",
+    width: "16px",
+    height: "100%",
+    placeItems: "center",
+    borderRadius: "0",
+    fontSize: "0",
+    lineHeight: "1",
+    transform: "none"
+  },
+  ".cm-foldGutter span[title='Fold line']::after": {
+    content: "'▾'",
+    color: "var(--tapir-text-muted)",
+    fontSize: "14px",
+    lineHeight: "1"
+  },
+  ".cm-foldGutter span[title='Unfold line']::after": {
+    content: "'▸'",
+    color: "var(--tapir-text-muted)",
+    fontSize: "14px",
+    lineHeight: "1"
+  },
+  ".cm-foldGutter span[title]:hover::after": {
+    color: "var(--tapir-text-strong)"
+  },
+  ".cm-lineNumbers .cm-gutterElement": {
+    boxSizing: "border-box",
+    width: "30px !important",
+    minWidth: "30px !important",
+    padding: "0 5px 0 2px !important"
+  },
+  ".cm-lineNumbers": {
+    boxSizing: "border-box",
+    flex: "0 0 30px !important",
+    width: "30px !important",
+    minWidth: "30px !important",
+    maxWidth: "30px !important"
   },
   ".cm-activeLine, .cm-activeLineGutter": {
     backgroundColor: "rgba(255, 255, 255, 0.055)"
@@ -131,6 +193,17 @@ const editorTheme = EditorView.theme({
   }
 });
 
+const tapirHighlightStyle = HighlightStyle.define([
+  { tag: tags.propertyName, color: "#9fcbff" },
+  { tag: [tags.string, tags.special(tags.string)], color: "#e5b77f" },
+  { tag: [tags.number, tags.bool], color: "#bda5ee" },
+  { tag: tags.null, color: "#98a0ac", fontStyle: "italic" },
+  { tag: [tags.keyword, tags.operator], color: "#88c7ba" },
+  { tag: [tags.brace, tags.squareBracket, tags.paren], color: "#c7cbd1" },
+  { tag: tags.comment, color: "#737b84", fontStyle: "italic" },
+  { tag: tags.invalid, color: "var(--tapir-danger)", textDecoration: "underline" }
+]);
+
 const curlHighlighting = ViewPlugin.fromClass(class {
   decorations: DecorationSet;
 
@@ -145,11 +218,12 @@ const curlHighlighting = ViewPlugin.fromClass(class {
 
 function editorExtensions(): Extension[] {
   const languageExtensions = props.language === "json"
-    ? [lintGutter(), json(), linter(jsonParseLinter())]
+    ? [json(), linter(jsonParseLinter())]
     : props.language === "curl" ? [curlHighlighting] : [];
 
   return [
     basicSetup,
+    syntaxHighlighting(tapirHighlightStyle),
     ...languageExtensions,
     EditorState.readOnly.of(!props.editable),
     EditorView.editable.of(props.editable),

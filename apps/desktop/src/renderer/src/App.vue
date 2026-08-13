@@ -253,9 +253,7 @@ async function serverDeleted(serverId: string): Promise<void> {
 <template>
   <div class="flex h-screen min-w-0 flex-col overflow-hidden bg-[var(--tapir-bg)] text-[var(--tapir-text)]">
     <AppHeader
-      :operations-count="workspaceServers.operations.value.length"
       :selected-server="workspaceServers.selectedServer.value"
-      :servers-count="workspaceServers.servers.value.length"
       :workspace="workspaceServers.workspace.value"
     />
 
@@ -318,7 +316,6 @@ async function serverDeleted(serverId: string): Promise<void> {
           :authentication="workspaceServers.selectedServer.value?.authentication ?? []"
           :active-request-tab="request.activeRequestTab.value"
           :can-send="request.canSend.value"
-          :curl-command="request.curlCommand.value"
           :draft-tabs="request.visibleDrafts.value"
           :headers="request.headers.value"
           :is-custom-space="request.isCustomSpace.value"
@@ -326,13 +323,10 @@ async function serverDeleted(serverId: string): Promise<void> {
           :is-sending="request.isSending.value"
           :operation-url="request.operationUrl.value"
           :parameters="request.parameters.value"
-          :pretty-request="request.prettyRequest.value"
-          :request-body-schema="request.requestBodySchema.value"
           :required-body-fields="request.requiredBodyFields.value"
           :request-preview="request.requestPreview.value"
           :request-error="errorMessage"
           :request-tabs="request.requestTabs.value"
-          :responses-schema="request.responsesSchema.value"
           :selected-content-types="request.selectedContentTypes.value"
           :selected-operation="workspaceServers.selectedOperation.value"
           :selected-server="workspaceServers.selectedServer.value"

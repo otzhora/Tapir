@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from "electron";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -80,12 +80,7 @@ async function createWindow(show = true): Promise<BrowserWindow> {
     minHeight: 640,
     title: "Tapir",
     autoHideMenuBar: true,
-    titleBarStyle: "hidden",
-    titleBarOverlay: {
-      color: "#17191d",
-      symbolColor: "#a8b0b7",
-      height: 44
-    },
+    frame: false,
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
       sandbox: true,
@@ -190,6 +185,9 @@ function writeSmokeReport(value: Record<string, unknown>): void {
 }
 
 function registerIpc(): void {
+  ipcMain.on("tapir:window-minimize", (event) => withTrustedWindow(event, (window) => window.minimize()));
+  ipcMain.on("tapir:window-toggle-maximize", (event) => withTrustedWindow(event, (window) => window.isMaximized() ? window.unmaximize() : window.maximize()));
+  ipcMain.on("tapir:window-close", (event) => withTrustedWindow(event, (window) => window.close()));
   handle("tapir:getInitialState", async () => tapir.getInitialState());
   handle("tapir:addServer", async (input) => tapir.addServer(input));
   handle("tapir:refreshServerSchema", async (input) => tapir.refreshServerSchema(input));
@@ -223,7 +221,13 @@ function handle<Channel extends TapirIpcChannel>(
   });
 }
 
-function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
+function withTrustedWindow(event: IpcMainEvent, action: (window: BrowserWindow) => void): void {
+  assertTrustedRenderer(event);
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (window) action(window);
+}
+
+function assertTrustedRenderer(event: IpcMainInvokeEvent | IpcMainEvent): void {
   if (!event.senderFrame || event.senderFrame.routingId !== event.sender.mainFrame.routingId) {
     throw new Error("Blocked IPC call from an untrusted renderer.");
   }

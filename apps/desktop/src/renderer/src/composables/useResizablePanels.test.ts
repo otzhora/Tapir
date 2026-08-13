@@ -14,7 +14,7 @@ describe("useResizablePanels", () => {
     panels.startColumnResize(new MouseEvent("mousedown", { clientX: 320 }));
     window.dispatchEvent(new MouseEvent("mousemove", { clientX: 1000 }));
 
-    expect(panels.shellStyle.value.gridTemplateColumns).toBe("1000px 6px minmax(260px, 1fr)");
+    expect(panels.shellStyle.value.gridTemplateColumns).toBe("1000px 1px minmax(260px, 1fr)");
     window.dispatchEvent(new MouseEvent("mouseup"));
   });
 
@@ -25,7 +25,7 @@ describe("useResizablePanels", () => {
     panels.startColumnResize(new MouseEvent("mousedown", { clientX: 320 }));
     window.dispatchEvent(new MouseEvent("mousemove", { clientX: 1600 }));
 
-    expect(panels.shellStyle.value.gridTemplateColumns).toBe("934px 6px minmax(260px, 1fr)");
+    expect(panels.shellStyle.value.gridTemplateColumns).toBe("934px 1px minmax(260px, 1fr)");
     window.dispatchEvent(new MouseEvent("mouseup"));
   });
 });

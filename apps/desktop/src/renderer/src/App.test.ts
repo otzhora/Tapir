@@ -35,6 +35,19 @@ describe("desktop renderer app", () => {
     document.body.innerHTML = "";
   });
 
+  it("routes custom title-bar controls through the preload bridge", async () => {
+    const wrapper = mountApp();
+    await settle();
+
+    await wrapper.find("button[aria-label='Minimize window']").trigger("click");
+    await wrapper.find("button[aria-label='Maximize window']").trigger("click");
+    await wrapper.find("button[aria-label='Close window']").trigger("click");
+
+    expect(bridge.minimizeWindow).toHaveBeenCalledOnce();
+    expect(bridge.toggleMaximizeWindow).toHaveBeenCalledOnce();
+    expect(bridge.closeWindow).toHaveBeenCalledOnce();
+  });
+
   it("loads a server, previews an operation, sends it, and restores it from history", async () => {
     const wrapper = mountApp();
     await settle();
@@ -490,7 +503,7 @@ describe("desktop renderer app", () => {
   it("saves pending API key auth before Send, keeps IPC secret-free, and reloads only configured state", async () => {
     const wrapper = mountApp();
     await settle();
-    await wrapper.findAll("button").find((button) => button.text().includes("Headers"))?.trigger("click");
+    await wrapper.findAll("button").find((button) => button.text().includes("Authorization"))?.trigger("click");
     await settle();
 
     expect(wrapper.text()).toContain("Required authentication declared by this operation");
@@ -508,7 +521,7 @@ describe("desktop renderer app", () => {
     wrapper.unmount();
     const restarted = mountApp();
     await settle();
-    await restarted.findAll("button").find((button) => button.text().includes("Headers"))?.trigger("click");
+    await restarted.findAll("button").find((button) => button.text().includes("Authorization"))?.trigger("click");
     await settle();
     expect(restarted.text()).toContain("Credential configured");
     expect(JSON.stringify(await bridge.getInitialState())).not.toContain("renderer-secret");
@@ -518,7 +531,7 @@ describe("desktop renderer app", () => {
     vi.mocked(bridge.saveAuthentication).mockRejectedValueOnce(new Error("Credential storage is unavailable."));
     const wrapper = mountApp();
     await settle();
-    await wrapper.findAll("button").find((button) => button.text().includes("Headers"))?.trigger("click");
+    await wrapper.findAll("button").find((button) => button.text().includes("Authorization"))?.trigger("click");
     const credential = wrapper.find("input[aria-label='Authentication credential']");
     await credential.setValue("retry-secret");
     await credential.element.closest("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
@@ -648,6 +661,9 @@ function createMockBridge(): MockTapirBridge {
   };
 
   const bridge = {
+    minimizeWindow: vi.fn(),
+    toggleMaximizeWindow: vi.fn(),
+    closeWindow: vi.fn(),
     getInitialState: vi.fn(async () => ({ workspace, servers: [{ ...serverWithDefinition, authentication: state.authentication }] })),
     addServer: vi.fn(),
     refreshServerSchema: vi.fn(),

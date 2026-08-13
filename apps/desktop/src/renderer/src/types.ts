@@ -1,4 +1,4 @@
-export type RequestTab = "params" | "auth" | "body" | "schema" | "preview";
+export type RequestTab = "params" | "authorization" | "headers" | "body" | "preview";
 
 export type CollapsiblePanel = "operations" | "response";
 

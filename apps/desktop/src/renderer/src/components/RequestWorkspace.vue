@@ -1,21 +1,28 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import { AlertCircle, Check, Clipboard, Copy, Database, Eye, FileJson2, LoaderCircle, Pencil, Plus, Send, TerminalSquare, X } from "lucide-vue-next";
+import { AlertCircle, Check, Clipboard, Copy, Eye, EyeOff, LoaderCircle, LockKeyhole, Pencil, Plus, Send, TerminalSquare, X } from "lucide-vue-next";
 import type { NormalizedOperation, PreparedOperationRequest, RequestDraft, RequestDraftHeader, RequestDraftParameter, SaveAuthenticationRequest, ServerAuthenticationConfiguration, ServerWithDefinition } from "@tapir/core";
 import type { RequestTab, RequestTabItem } from "../types";
 import { eyebrowClass, fieldClass, iconButtonClass, mutedTextClass, primaryActionClass, softTextClass, strongTextClass } from "../uiClasses";
 import JsonCodeEditor from "./JsonCodeEditor.vue";
-import MethodBadge from "./MethodBadge.vue";
-import type { CurlShell } from "../requestFormatting";
+import { buildCurlCommand, type CurlShell } from "../requestFormatting";
 
 type ValidationIssue = { field: string; message: string };
+type DisplayHeaderRow = {
+  id: string;
+  enabled: boolean;
+  hidden: boolean;
+  kind: "parameter" | "custom" | "readonly";
+  name: string;
+  source: "OpenAPI" | "Custom" | "Generated" | "Authorization";
+  value: string;
+};
 
 const props = defineProps<{
   activeDraft: RequestDraft | null;
   authentication: ServerAuthenticationConfiguration[];
   activeRequestTab: RequestTab;
   canSend: boolean;
-  curlCommand: string;
   draftTabs: RequestDraft[];
   headers: RequestDraftHeader[];
   isCustomSpace: boolean;
@@ -23,13 +30,10 @@ const props = defineProps<{
   isSending: boolean;
   operationUrl: string;
   parameters: RequestDraftParameter[];
-  prettyRequest: string;
-  requestBodySchema: string;
   requiredBodyFields: string[];
   requestPreview: PreparedOperationRequest | null;
   requestError: string;
   requestTabs: RequestTabItem[];
-  responsesSchema: string;
   selectedContentTypes: string[];
   selectedOperation: NormalizedOperation | null;
   selectedServer: ServerWithDefinition | null;
@@ -70,6 +74,7 @@ const draftMenuFirstAction = ref<HTMLButtonElement | null>(null);
 const draftMenuElement = ref<HTMLElement | null>(null);
 const activeNameInput = ref<HTMLInputElement | null>(null);
 const curlShell = ref<CurlShell>("posix");
+const showHiddenHeaders = ref(false);
 const credentialValue = ref("");
 const basicUsername = ref("");
 const authenticationError = ref("");
@@ -92,6 +97,60 @@ const hasPendingAuthentication = computed(() => Boolean(credentialValue.value)
   || (isBasicAuthentication.value && basicUsername.value !== (configuredAuthentication.value?.username ?? "")));
 const isPendingAuthenticationValid = computed(() => Boolean(credentialValue.value)
   && (!isBasicAuthentication.value || Boolean(basicUsername.value.trim())));
+const requestParameters = computed(() => props.parameters.filter((parameter) => parameter.in !== "header"));
+const previewCurlCommand = computed(() => buildCurlCommand(props.requestPreview?.redactedRequest ?? null, curlShell.value));
+const authenticationHeaderNames = computed(() => new Set(supportedSchemes.value.flatMap((scheme) => {
+  if (scheme.type === "apiKey" && scheme.in === "header" && scheme.name) return [scheme.name.toLowerCase()];
+  if (scheme.type === "http") return ["authorization"];
+  return [];
+})));
+const requestHeaderRows = computed<DisplayHeaderRow[]>(() => {
+  const rows: DisplayHeaderRow[] = [
+    ...props.parameters.filter((parameter) => parameter.in === "header").map((parameter) => ({
+      id: parameter.id,
+      enabled: parameter.enabled,
+      hidden: !parameter.enabled,
+      kind: "parameter" as const,
+      name: parameter.name,
+      source: "OpenAPI" as const,
+      value: parameter.value
+    })),
+    ...props.headers.map((header) => ({
+      id: header.id,
+      enabled: header.enabled,
+      hidden: !header.enabled,
+      kind: "custom" as const,
+      name: header.name,
+      source: "Custom" as const,
+      value: header.value
+    }))
+  ];
+  const knownNames = new Set(rows.map((row) => row.name.trim().toLowerCase()).filter(Boolean));
+  for (const [name, value] of Object.entries(props.requestPreview?.redactedRequest.headers ?? {})) {
+    const normalizedName = name.toLowerCase();
+    if (knownNames.has(normalizedName)) continue;
+    rows.push({
+      id: `generated:${normalizedName}`,
+      enabled: true,
+      hidden: true,
+      kind: "readonly",
+      name,
+      source: authenticationHeaderNames.value.has(normalizedName) ? "Authorization" : "Generated",
+      value
+    });
+    knownNames.add(normalizedName);
+  }
+  for (const configured of props.authentication) {
+    const scheme = supportedSchemes.value.find((candidate) => candidate.key === configured.schemeKey);
+    const name = scheme?.type === "apiKey" && scheme.in === "header" ? scheme.name : scheme?.type === "http" ? "Authorization" : undefined;
+    if (!name || knownNames.has(name.toLowerCase())) continue;
+    rows.push({ id: `auth:${configured.schemeKey}`, enabled: true, hidden: true, kind: "readonly", name, source: "Authorization", value: "••••••••" });
+    knownNames.add(name.toLowerCase());
+  }
+  return rows;
+});
+const visibleHeaderRows = computed(() => requestHeaderRows.value.filter((row) => showHiddenHeaders.value || !row.hidden));
+const hiddenHeaderCount = computed(() => requestHeaderRows.value.filter((row) => row.hidden).length);
 watch([() => props.selectedServer?.server.id, () => props.selectedOperation?.operationId], () => {
   credentialValue.value = "";
   selectedSchemeKey.value = supportedSchemes.value[0]?.key ?? "";
@@ -238,7 +297,7 @@ function usesStructuredBodyEditor(value: string): boolean {
 <template>
   <div class="min-h-0 overflow-auto bg-[var(--tapir-bg-panel-soft)] backdrop-blur-xl">
     <div v-if="(selectedServer || isCustomSpace) && (selectedOperation || isCustomSpace)" class="grid min-h-full grid-rows-[auto_1fr]">
-      <nav class="flex min-w-0 items-center gap-1 overflow-x-auto border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-field)] px-3 pt-2 backdrop-blur-xl">
+      <nav class="request-tabs-bar">
         <button
           v-for="draft in draftTabs"
           :key="draft.id"
@@ -251,7 +310,7 @@ function usesStructuredBodyEditor(value: string): boolean {
           <span v-if="draft.deprecatedAt" class="rounded bg-[var(--tapir-warning-bg)] px-1.5 py-0.5 text-[10px] font-black uppercase text-[var(--tapir-warning)]">Deprecated</span>
           <X :size="14" class="shrink-0 text-[var(--tapir-text-subtle)] hover:text-[var(--tapir-text-strong)]" @click.stop="emit('closeDraft', draft.id)" />
         </button>
-        <button :class="['mb-1 grid h-8 w-8 shrink-0 place-items-center', iconButtonClass]" title="New request tab" @click="emit('createDraft')">
+        <button :class="['grid h-8 w-8 shrink-0 place-items-center', iconButtonClass]" title="New request tab" @click="emit('createDraft')">
           <Plus :size="17" />
         </button>
       </nav>
@@ -277,31 +336,32 @@ function usesStructuredBodyEditor(value: string): boolean {
       </Teleport>
 
       <section v-if="activeDraft" class="grid min-h-full grid-rows-[auto_auto_auto_1fr] bg-transparent">
-        <header class="grid gap-3 border-b border-[var(--tapir-border)] bg-[var(--tapir-bg-panel-strong)] px-4 py-3 shadow-[var(--tapir-inset-header-shadow)] backdrop-blur-xl">
-          <div class="flex min-w-0 items-center justify-between gap-4">
-            <div class="grid min-w-0 gap-2">
-              <div class="flex min-w-0 items-center gap-2.5">
-                <MethodBadge v-if="!isCustomSpace && selectedOperation" :method="selectedOperation.method" />
-                <select v-else :value="activeDraft.method" class="h-9 rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)] px-2 text-[13px] font-black text-[var(--tapir-text-strong)] outline-none" @change="emit('updateMethod', inputValue($event))">
-                  <option v-for="method in methods" :key="method" :value="method">{{ method }}</option>
-                </select>
-                <input ref="activeNameInput" aria-label="Request name" :class="['min-w-0 rounded bg-transparent px-1 text-[18px] font-bold outline-none transition focus:bg-[var(--tapir-bg-field)] focus:shadow-[0_0_0_2px_var(--tapir-focus-ring)] [overflow-wrap:anywhere]', strongTextClass]" :value="activeDraft.name" @input="emit('updateDraftName', inputValue($event))" />
+        <header class="request-composer">
+          <div class="request-identity">
+            <div class="min-w-0">
+              <div class="flex min-w-0 items-center gap-2">
+                <input ref="activeNameInput" aria-label="Request name" :class="['min-w-0 flex-1 rounded bg-transparent px-1 text-[16px] font-extrabold outline-none transition focus:bg-[var(--tapir-bg-field)] focus:shadow-[0_0_0_2px_var(--tapir-focus-ring)]', strongTextClass]" :value="activeDraft.name" @input="emit('updateDraftName', inputValue($event))" />
+                <span class="request-source-chip">{{ activeDraft.deprecatedAt ? "Deprecated custom" : isCustomSpace ? "Custom" : "OpenAPI" }}</span>
               </div>
-              <p v-if="selectedOperation && !isCustomSpace" :class="['m-0 max-w-[900px] text-[13px]', mutedTextClass]">{{ selectedOperation.description || selectedOperation.path }}</p>
-              <p v-else :class="['m-0 max-w-[900px] text-[13px]', mutedTextClass]">Custom request</p>
+              <p v-if="selectedOperation && !isCustomSpace" :class="['m-0 mt-1 truncate px-1 text-[12px]', mutedTextClass]">{{ selectedOperation.description || selectedOperation.path }}</p>
+              <p v-else :class="['m-0 mt-1 truncate px-1 text-[12px]', mutedTextClass]">{{ selectedServer?.server.name ?? "Request Sandbox" }} &middot; Custom request</p>
             </div>
-            <button :class="[primaryActionClass, 'h-10 min-w-[104px] shrink-0 px-3.5 shadow-[var(--tapir-primary-shadow)]']" :disabled="!canSend || isSavingAuthentication" :aria-busy="isSending || isSavingAuthentication" :title="validationIssues.length ? 'Resolve validation issues before sending' : undefined" @click="emit('callOperation')">
-              <LoaderCircle v-if="isSending || isSavingAuthentication" :size="17" class="animate-spin" />
-              <Send v-else :size="17" />
-              {{ isSending ? "Sending" : "Send" }}
-            </button>
+            <span class="request-space-label" :title="selectedServer?.server.name ?? 'Request Sandbox'">{{ selectedServer?.server.name ?? "Request Sandbox" }}</span>
           </div>
 
           <div class="grid gap-1.5">
-            <div class="grid grid-cols-[minmax(96px,128px)_1fr] overflow-hidden rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)]">
-              <div class="grid place-items-center border-r border-[var(--tapir-border-control)] px-3 font-black text-[var(--tapir-accent)]">{{ activeDraft.method }}</div>
-              <input v-if="isCustomSpace" class="h-11 min-w-0 bg-transparent px-3 text-[var(--tapir-text-strong)] outline-none" :value="activeDraft.url" placeholder="https://api.example.com/resource" @input="emit('updateUrl', inputValue($event))" />
-              <input v-else class="h-11 min-w-0 bg-transparent px-3 text-[var(--tapir-text-strong)] outline-none" :value="operationUrl" readonly />
+            <div class="request-url-bar">
+              <div v-if="!isCustomSpace && selectedOperation" class="request-method-slot"><strong class="request-method-text" :data-method="selectedOperation.method">{{ selectedOperation.method }}</strong></div>
+              <select v-else :value="activeDraft.method" class="request-method-select" aria-label="HTTP method" @change="emit('updateMethod', inputValue($event))">
+                <option v-for="method in methods" :key="method" :value="method">{{ method }}</option>
+              </select>
+              <input v-if="isCustomSpace" class="request-url-input" :value="activeDraft.url" placeholder="https://api.example.com/resource" @input="emit('updateUrl', inputValue($event))" />
+              <input v-else class="request-url-input" :value="operationUrl" readonly />
+              <button :class="[primaryActionClass, 'request-send-button']" :disabled="!canSend || isSavingAuthentication" :aria-busy="isSending || isSavingAuthentication" :title="validationIssues.length ? 'Resolve validation issues before sending' : undefined" @click="emit('callOperation')">
+                <LoaderCircle v-if="isSending || isSavingAuthentication" :size="17" class="animate-spin" />
+                <Send v-else :size="17" />
+                {{ isSending ? "Sending" : "Send" }}
+              </button>
             </div>
             <p v-for="issue in [...issuesForField('url'), ...issuesForField('path')]" :key="`${issue.field}:${issue.message}`" class="field-error">
               <AlertCircle :size="14" class="mt-0.5 shrink-0" />
@@ -309,11 +369,6 @@ function usesStructuredBodyEditor(value: string): boolean {
             </p>
           </div>
 
-          <div :class="['grid gap-2 text-[13px] md:grid-cols-3', mutedTextClass]">
-            <span class="truncate">Name: <strong :class="softTextClass">{{ activeDraft.name }}</strong></span>
-            <span class="truncate">Source: <strong :class="softTextClass">{{ activeDraft.deprecatedAt ? "Deprecated custom" : isCustomSpace ? "Custom" : "OpenAPI" }}</strong></span>
-            <span class="truncate">Space: <strong :class="softTextClass">{{ selectedServer?.server.name ?? "Request Sandbox" }}</strong></span>
-          </div>
           <div v-if="activeDraft.deprecatedAt" class="flex items-start gap-2 rounded-md border border-[var(--tapir-warning-border)] bg-[var(--tapir-warning-bg)] p-3 text-[13px] font-bold text-[var(--tapir-warning)]">
             <AlertCircle :size="16" class="mt-0.5 shrink-0" />
             <span>{{ activeDraft.deprecationReason || "This request was moved to Custom because its OpenAPI operation changed." }}</span>
@@ -346,10 +401,13 @@ function usesStructuredBodyEditor(value: string): boolean {
 
         <div class="min-h-[260px] p-4">
           <section v-if="activeRequestTab === 'params'" class="grid gap-3">
-            <div class="flex justify-end gap-2">
+            <div class="section-toolbar">
+              <div><strong>Request parameters</strong><span>{{ requestParameters.length }} configured</span></div>
+              <div class="flex gap-2">
               <button class="mini-button" @click="emit('addParameter', 'query')"><Plus :size="15" /> Query</button>
               <button class="mini-button" @click="emit('addParameter', 'header')"><Plus :size="15" /> Header</button>
               <button class="mini-button" @click="emit('addParameter', 'cookie')"><Plus :size="15" /> Cookie</button>
+              </div>
             </div>
             <div class="request-param-grid">
               <div class="table-head">On</div>
@@ -357,8 +415,8 @@ function usesStructuredBodyEditor(value: string): boolean {
               <div class="table-head">Location</div>
               <div class="table-head">Value</div>
               <div class="table-head"></div>
-              <template v-if="parameters.length > 0">
-                <template v-for="parameter in parameters" :key="parameter.id">
+              <template v-if="requestParameters.length > 0">
+                <template v-for="parameter in requestParameters" :key="parameter.id">
                   <div class="table-cell"><input type="checkbox" :checked="parameter.enabled" @change="emit('toggleParameter', parameter.id, checkedValue($event))" /></div>
                   <div class="table-cell">
                     <input v-if="parameter.source === 'custom'" :value="parameter.name" :class="fieldClass" placeholder="name" @input="emit('updateParameterName', parameter.id, inputValue($event))" />
@@ -385,7 +443,7 @@ function usesStructuredBodyEditor(value: string): boolean {
             </div>
           </section>
 
-          <section v-else-if="activeRequestTab === 'auth'" class="grid gap-3">
+          <section v-else-if="activeRequestTab === 'authorization'" class="grid gap-3">
             <div v-if="selectedOperation && !isCustomSpace" class="grid gap-3 rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)] p-4">
               <div>
                 <strong :class="strongTextClass">Authentication</strong>
@@ -418,23 +476,49 @@ function usesStructuredBodyEditor(value: string): boolean {
               </template>
               <p v-if="unsupportedSchemes.length" class="m-0 text-[12px] text-[var(--tapir-warning)]">Unsupported: {{ unsupportedSchemes.map((scheme) => scheme.key).join(", ") }}.</p>
             </div>
-            <div class="flex justify-end">
-              <button class="mini-button" @click="emit('addHeader')"><Plus :size="15" /> Header</button>
+            <div v-else class="empty-state min-h-[170px] rounded-md border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-field)] px-6">
+              This request has no OpenAPI authorization scheme. Add credentials as request headers when needed.
+            </div>
+          </section>
+
+          <section v-else-if="activeRequestTab === 'headers'" class="grid gap-3">
+            <div class="section-toolbar">
+              <div><strong>Request headers</strong><span>{{ visibleHeaderRows.length }} shown<span v-if="hiddenHeaderCount"> · {{ hiddenHeaderCount }} hidden</span></span></div>
+              <div class="flex items-center gap-2">
+                <button v-if="hiddenHeaderCount" class="mini-button" type="button" :aria-pressed="showHiddenHeaders" @click="showHiddenHeaders = !showHiddenHeaders">
+                  <EyeOff v-if="showHiddenHeaders" :size="14" />
+                  <Eye v-else :size="14" />
+                  {{ showHiddenHeaders ? "Hide hidden" : "Show hidden" }}
+                </button>
+                <button class="mini-button" @click="emit('addHeader')"><Plus :size="15" /> Header</button>
+              </div>
             </div>
             <div class="request-header-grid">
               <div class="table-head">On</div>
               <div class="table-head">Header</div>
               <div class="table-head">Value</div>
+              <div class="table-head">Source</div>
               <div class="table-head"></div>
-              <template v-if="headers.length > 0">
-                <template v-for="header in headers" :key="header.id">
-                  <div class="table-cell"><input type="checkbox" :checked="header.enabled" @change="emit('toggleHeader', header.id, checkedValue($event))" /></div>
-                  <div class="table-cell"><input :value="header.name" :class="fieldClass" placeholder="x-api-key" @input="emit('updateHeader', header.id, 'name', inputValue($event))" /></div>
-                  <div class="table-cell"><input :value="header.value" :class="fieldClass" placeholder="value" @input="emit('updateHeader', header.id, 'value', inputValue($event))" /></div>
-                  <div class="table-cell"><button class="icon-button" title="Remove header" @click="emit('removeHeader', header.id)"><X :size="15" /></button></div>
+              <template v-if="visibleHeaderRows.length > 0">
+                <template v-for="header in visibleHeaderRows" :key="header.id">
+                  <div class="table-cell">
+                    <LockKeyhole v-if="header.kind === 'readonly'" :size="14" class="text-[var(--tapir-text-subtle)]" />
+                    <input v-else type="checkbox" :checked="header.enabled" @change="header.kind === 'parameter' ? emit('toggleParameter', header.id, checkedValue($event)) : emit('toggleHeader', header.id, checkedValue($event))" />
+                  </div>
+                  <div class="table-cell">
+                    <input v-if="header.kind === 'custom'" :value="header.name" :class="fieldClass" placeholder="x-api-key" @input="emit('updateHeader', header.id, 'name', inputValue($event))" />
+                    <strong v-else class="break-all text-[13px]">{{ header.name }}</strong>
+                  </div>
+                  <div class="table-cell">
+                    <input v-if="header.kind === 'parameter'" :value="header.value" :class="fieldClass" :placeholder="header.name" @input="emit('setParameter', header.id, inputValue($event))" />
+                    <input v-else-if="header.kind === 'custom'" :value="header.value" :class="fieldClass" placeholder="value" @input="emit('updateHeader', header.id, 'value', inputValue($event))" />
+                    <code v-else class="break-all text-[12px] text-[var(--tapir-text-muted)]">{{ header.value }}</code>
+                  </div>
+                  <div class="table-cell"><span class="header-source">{{ header.source }}</span></div>
+                  <div class="table-cell"><button v-if="header.kind === 'custom'" class="icon-button" title="Remove header" @click="emit('removeHeader', header.id)"><X :size="15" /></button></div>
                 </template>
               </template>
-              <div v-else :class="['col-span-4 grid min-h-[130px] place-items-center', mutedTextClass]">No custom headers yet.</div>
+              <div v-else :class="['col-span-5 grid min-h-[130px] place-items-center', mutedTextClass]">No request headers yet.</div>
             </div>
           </section>
 
@@ -465,34 +549,23 @@ function usesStructuredBodyEditor(value: string): boolean {
             </p>
           </section>
 
-          <section v-else-if="activeRequestTab === 'schema'" class="grid gap-3 lg:grid-cols-2">
-            <div class="min-w-0">
-              <div :class="['mb-2 flex items-center gap-2 text-sm font-bold', softTextClass]"><FileJson2 :size="17" /> Request schema</div>
-              <pre class="code-block">{{ requestBodySchema }}</pre>
-            </div>
-            <div class="min-w-0">
-              <div :class="['mb-2 flex items-center gap-2 text-sm font-bold', softTextClass]"><Database :size="17" /> Responses</div>
-              <pre class="code-block">{{ responsesSchema }}</pre>
-            </div>
-          </section>
-
           <section v-else class="grid gap-3">
-            <div class="mb-1 flex items-center justify-between gap-3">
-              <div :class="['flex items-center gap-2 text-sm font-bold', softTextClass]"><Eye :size="17" /> Prepared request</div>
-              <select v-model="curlShell" class="mini-button" title="cURL shell syntax">
-                <option value="posix">bash / zsh</option>
-                <option value="powershell">PowerShell</option>
-                <option value="cmd">Windows cmd</option>
-              </select>
-              <button class="mini-button" :disabled="!curlCommand" title="Copy cURL with known credentials redacted" @click="emit('copyCurl', curlShell, false)">
-                <Clipboard :size="15" />
-                Redacted cURL
-              </button>
-              <button class="mini-button" :disabled="!curlCommand" title="Copy runnable cURL, potentially including credentials" @click="emit('copyCurl', curlShell, true)">
-                Runnable
-              </button>
+            <div class="preview-toolbar">
+              <div>
+                <strong>cURL preview</strong>
+                <span>Credentials are redacted</span>
+              </div>
+              <div class="preview-actions">
+                <select v-model="curlShell" class="mini-button" aria-label="cURL shell syntax">
+                  <option value="posix">bash / zsh</option>
+                  <option value="powershell">PowerShell</option>
+                  <option value="cmd">Windows cmd</option>
+                </select>
+                <button class="mini-button" :disabled="!previewCurlCommand" title="Copy redacted cURL" @click="emit('copyCurl', curlShell, false)"><Clipboard :size="15" /> Copy cURL</button>
+                <button class="mini-button" :disabled="!previewCurlCommand" title="Copy runnable cURL with credentials" @click="emit('copyCurl', curlShell, true)">Copy with secrets</button>
+              </div>
             </div>
-            <pre v-if="requestPreview" class="code-block min-h-[190px]">{{ prettyRequest }}</pre>
+            <JsonCodeEditor v-if="requestPreview" :model-value="previewCurlCommand" :editable="false" language="curl" min-height="210px" title="cURL" />
             <div v-else class="empty-state min-h-[190px] rounded-md border border-[var(--tapir-border-control)]">{{ isPreviewing ? "Preparing request..." : "Complete the request fields to preview it." }}</div>
           </section>
         </div>

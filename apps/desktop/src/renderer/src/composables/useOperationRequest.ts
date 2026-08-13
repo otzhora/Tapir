@@ -81,10 +81,10 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   const showBodyTab = computed(() => activeDraft.value?.method !== "GET");
 
   const requestTabs = computed<RequestTabItem[]>(() => [
-    { id: "params", label: activeDraft.value?.sourceType === "custom" ? "Query" : "Params", count: enabledParameters(activeDraft.value).length },
-    { id: "auth", label: "Headers", count: enabledHeaders(activeDraft.value).length },
+    { id: "params", label: activeDraft.value?.sourceType === "custom" ? "Query" : "Params", count: enabledParameters(activeDraft.value).filter((parameter) => parameter.in !== "header").length },
+    { id: "authorization", label: "Authorization" },
+    { id: "headers", label: "Headers", count: headerCount(activeDraft.value) },
     ...(showBodyTab.value ? [{ id: "body" as const, label: "Body", count: selectedContentTypes.value.length }] : []),
-    ...(activeDraft.value?.sourceType === "openapi" ? [{ id: "schema" as const, label: "OpenAPI" }] : []),
     { id: "preview", label: "Preview" }
   ]);
 
@@ -430,6 +430,10 @@ function enabledParameters(draft: RequestDraft | null): RequestDraftParameter[] 
 
 function enabledHeaders(draft: RequestDraft | null) {
   return parseDraftHeaders(draft).filter((header) => header.enabled);
+}
+
+function headerCount(draft: RequestDraft | null): number {
+  return enabledHeaders(draft).length + enabledParameters(draft).filter((parameter) => parameter.in === "header").length;
 }
 
 function stringifySchema(value: unknown): string {

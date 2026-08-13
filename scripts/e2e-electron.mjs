@@ -103,16 +103,16 @@ async function exerciseFirstRun(window) {
   const operationSearch = window.getByLabel("Search operations");
   await operationSearch.fill("getApiKeyIdentity");
   await window.getByRole("button", { name: /Verify an API key/ }).click();
-  await window.locator("button.tab-button").filter({ hasText: "Headers" }).click();
+  await window.locator("button.tab-button").filter({ hasText: "Authorization" }).click();
   const credential = window.getByLabel("Authentication credential");
   await credential.fill("tapir-node-secret");
   await window.getByText(/Unsaved credential/).waitFor({ state: "visible" });
   await window.getByRole("button", { name: "Send", exact: true }).click();
   await window.getByText(/Credential saved/).waitFor({ state: "visible" });
-  await window.getByText(/200 · \d+ ms/).waitFor({ state: "visible" });
+  await window.locator(".response-status").filter({ hasText: /200\s+Success/ }).waitFor({ state: "visible" });
   assert.equal(await credential.inputValue(), "", "Credential input was not cleared after a successful save.");
   await window.getByRole("button", { name: "Preview", exact: true }).click();
-  const preparedRequest = await window.locator("pre.code-block").innerText();
+  const preparedRequest = await window.locator(".json-editor-host[aria-label='cURL'] .cm-content").innerText();
   assert(!preparedRequest.includes("tapir-node-secret"), "The Node API key is visible in the prepared-request preview.");
 
   const activeTab = window.locator(".request-tab").first();
@@ -135,7 +135,7 @@ async function exerciseFirstRun(window) {
   await addServer(window, dotnetBaseUrl, `${dotnetBaseUrl}/swagger/v1/swagger.json`);
   await window.getByText("Tapir .NET Logistics API", { exact: true }).first().waitFor({ state: "visible" });
   await window.getByLabel("Search operations").fill("GetHealth");
-  await window.getByRole("button", { name: /Get API health/ }).click();
+  await window.getByRole("button", { name: /Get API health/ }).first().click();
   await window.getByRole("button", { name: "Send", exact: true }).click();
   await window.getByText("tapir-dotnet-logistics-api", { exact: false }).first().waitFor({ state: "visible" });
 
@@ -160,15 +160,18 @@ async function exerciseRestart(window) {
   const restoredRequest = window.locator("[title='Restore this run in the current tab']").first();
   await restoredRequest.waitFor({ state: "visible" });
   await restoredRequest.click();
-  await window.locator("button.tab-button").filter({ hasText: "Headers" }).click();
+  await window.locator("button.tab-button").filter({ hasText: "Authorization" }).click();
   await window.getByText(/Credential configured/).waitFor({ state: "visible" });
 }
 
 async function addServer(window, baseUrl, specUrl = "") {
-  await window.getByLabel("Server base URL").fill(baseUrl);
+  const baseUrlInput = window.getByLabel("Server base URL");
+  if (!await baseUrlInput.isVisible()) await window.getByRole("button", { name: "Add server", exact: true }).click();
+  await baseUrlInput.fill(baseUrl);
   await window.getByLabel(/OpenAPI URL/).fill(specUrl);
-  await window.getByRole("button", { name: "Add", exact: true }).click();
-  await window.getByRole("button", { name: "Add", exact: true }).waitFor({ state: "visible", timeout: 30_000 });
+  const dialog = window.getByRole("dialog", { name: "Add server" });
+  await dialog.getByRole("button", { name: "Add server", exact: true }).click();
+  await dialog.waitFor({ state: "hidden", timeout: 30_000 });
 }
 
 async function importCurl(window, command) {

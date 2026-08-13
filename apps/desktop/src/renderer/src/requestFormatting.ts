@@ -21,12 +21,13 @@ export function buildCurlCommand(request: PreparedRequest | null, shell: CurlShe
   if (!request) return "";
   const quote = shell === "cmd" ? quoteCmd : shell === "powershell" ? quotePowerShell : quotePosix;
   const executable = shell === "powershell" ? "curl.exe" : "curl";
-  const parts = [executable, "-X", request.method, quote(request.url)];
+  const lines = [`${executable} -X ${request.method} ${quote(request.url)}`];
   for (const [name, value] of Object.entries(request.headers)) {
-    parts.push("-H", quote(`${name}: ${value}`));
+    lines.push(`-H ${quote(`${name}: ${value}`)}`);
   }
-  if (request.body) parts.push("--data-raw", quote(request.body));
-  return parts.join(" ");
+  if (request.body) lines.push(`--data-raw ${quote(request.body)}`);
+  const continuation = shell === "cmd" ? " ^\r\n  " : shell === "powershell" ? " `\n  " : " \\\n  ";
+  return lines.join(continuation);
 }
 
 function quotePosix(value: string): string {
