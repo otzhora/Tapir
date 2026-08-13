@@ -23,6 +23,7 @@ try {
   }
   if (dirtyFiles) await log(`WARNING: verification build contains uncommitted changes:\n${dirtyFiles}\n`);
 
+  run("dotnet", ["restore", join(root, "test-projects", "dotnet-swagger-api", "Tapir.DotNetSwaggerApi.csproj")]);
   runNpm(["run", "typecheck"]);
   runNpm(["test"]);
   runNpm(["run", "e2e:desktop"]);
@@ -34,7 +35,7 @@ try {
   const summary = {
     ok: true,
     verifiedAt: new Date().toISOString(),
-    verification: ["typecheck", "tests", "fixture authentication", "Electron E2E", "NSIS installer and update metadata", "packaging", "packaged smoke", "git diff --check"],
+    verification: [".NET fixture restore", "typecheck", "tests", "fixture authentication", "Electron E2E", "NSIS installer and update metadata", "packaging", "packaged smoke", "git diff --check"],
     ...manifest
   };
   await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
