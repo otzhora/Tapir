@@ -100,13 +100,12 @@ export function useOperationRequest(input: UseOperationRequestInput) {
   ));
   const responsesSchema = computed(() => stringifySchema(activeOperation.value?.responses ?? null));
   const historyRestoration = useRequestHistoryRestoration({
+    activeDraft,
     customOperationId: CUSTOM_OPERATION_ID,
     operations: input.operations,
     selectedOperationId: input.selectedOperationId,
     selectedServerId: input.selectedServerId,
     selectedContentTypes,
-    drafts,
-    visibleDrafts,
     createCustomRequest,
     createOpenApiRequest,
     saveDraft: persistence.saveDraft,
@@ -199,10 +198,12 @@ export function useOperationRequest(input: UseOperationRequestInput) {
 
   async function closeDraft(draftId: string): Promise<void> {
     await persistence.deleteDraft(draftId);
+    await ensureActiveSpaceHasDraft();
   }
 
   async function closeDrafts(draftIds: string[]): Promise<void> {
     await Promise.all(draftIds.map((draftId) => persistence.deleteDraft(draftId)));
+    await ensureActiveSpaceHasDraft();
   }
 
   async function duplicateDraft(draftId: string): Promise<RequestDraft | null> {
@@ -342,8 +343,8 @@ export function useOperationRequest(input: UseOperationRequestInput) {
     await execution.refreshPreview(draft);
   }
 
-  async function restoreHistory(entry: Parameters<typeof historyRestoration.restoreHistory>[0]): Promise<void> {
-    await historyRestoration.restoreHistory(entry);
+  async function restoreHistory(entry: Parameters<typeof historyRestoration.restoreHistory>[0], target: "current" | "new" = "current"): Promise<void> {
+    await historyRestoration.restoreHistory(entry, target);
   }
 
   function clearRequestInputs(): void {

@@ -248,6 +248,7 @@ describe("SQLite storage", () => {
     await expect(history.list({ workspaceId: workspace.id, serverId: null })).resolves.toMatchObject({ entries: [{ draftName: "Health check" }] });
     await expect(history.list({ workspaceId: workspace.id, method: "POST", status: 201 })).resolves.toMatchObject({ entries: [{ requestUrl: "https://history.example.test/orders" }] });
     await expect(history.list({ workspaceId: workspace.id, operationId: "listPets" })).resolves.toMatchObject({ entries: [{ id: entries[0]?.id }] });
+    await expect(history.list({ workspaceId: workspace.id, requestDraftId: draft.id })).resolves.toMatchObject({ entries: [{ id: entries[1]?.id }] });
     await expect(history.list({ workspaceId: workspace.id, createdAfter: "2026-07-01T00:00:03.500Z", createdBefore: "2026-07-01T00:00:04.500Z" })).resolves.toMatchObject({ entries: [{ id: entries[3]?.id }] });
     await drafts.delete(draft.id);
     await expect(history.list({ workspaceId: workspace.id, search: "Health check" })).resolves.toMatchObject({ entries: [{ id: entries[1]?.id }] });

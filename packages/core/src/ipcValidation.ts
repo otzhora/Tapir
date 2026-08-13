@@ -219,6 +219,7 @@ function historyFilter(value: unknown): HistoryFilter {
   const input = record(value, "historyFilter");
   return {
     workspaceId: string(input.workspaceId, "workspaceId"),
+    requestDraftId: optionalString(input.requestDraftId, "requestDraftId"),
     serverId: input.serverId === undefined ? undefined : nullableString(input.serverId, "serverId"),
     method: input.method === undefined ? undefined : method(input.method),
     status: optionalFiniteNumber(input.status, "status"),

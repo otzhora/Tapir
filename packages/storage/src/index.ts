@@ -545,6 +545,10 @@ function mapHistory(row: DbHistory): CallHistoryEntry {
 function historyWhere(input: HistoryQuery | HistoryFilter, includeCursor: boolean): { sql: string; parameters: Array<string | number> } {
   const clauses = ["h.workspace_id = ?"];
   const parameters: Array<string | number> = [input.workspaceId];
+  if (input.requestDraftId) {
+    clauses.push("h.request_draft_id = ?");
+    parameters.push(input.requestDraftId);
+  }
   if (input.serverId === null) clauses.push("h.server_instance_id is null");
   if (typeof input.serverId === "string") {
     clauses.push("h.server_instance_id = ?");

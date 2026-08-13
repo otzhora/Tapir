@@ -10,7 +10,7 @@ Tapir's first alpha is a local-first Windows API workspace focused on OpenAPI-bo
 - Schema-assisted request authoring for parameters, JSON, URL-encoded forms, and multipart bodies.
 - Header, query, and cookie API keys plus bearer and Basic authentication, with OS-backed secret storage and redaction.
 - Custom request tabs with browser-generated cURL import and redacted or runnable cURL export.
-- Workspace history with filters, search, pagination, restoration, and bounded response retention.
+- Compact per-request history with status, timing, and restoration into the current or a new request tab.
 - Server editing, refresh, rediscovery, deletion, variables, collapsible operation groups, and request-tab controls.
 - Versioned portable Windows x64 packaging with source provenance, SHA-256 checksums, and clean-profile smoke verification.
 - Path-aware OpenAPI discovery plus an optional explicit specification URL during server creation.

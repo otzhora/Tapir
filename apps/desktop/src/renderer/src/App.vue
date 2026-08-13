@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from "vue";
-import { History as HistoryIcon, LoaderCircle, Server as ServerIcon } from "lucide-vue-next";
-import type { CallHistoryEntry, HistoryFilter, NormalizedOperation, SaveAuthenticationRequest, ServerWithDefinition } from "@tapir/core";
+import { LoaderCircle } from "lucide-vue-next";
+import type { CallHistoryEntry, NormalizedOperation, SaveAuthenticationRequest, ServerWithDefinition } from "@tapir/core";
 import AppHeader from "./components/AppHeader.vue";
-import HistoryPanel from "./components/HistoryPanel.vue";
 import RequestWorkspace from "./components/RequestWorkspace.vue";
 import ResponsePanel from "./components/ResponsePanel.vue";
 import ServerConfiguration from "./components/ServerConfiguration.vue";
@@ -18,10 +17,8 @@ import { panelClass } from "./uiClasses";
 
 const errorMessage = ref("");
 const history = ref<CallHistoryEntry[]>([]);
-const historyCursor = ref<string | null>(null);
-const historyFilter = ref<Omit<HistoryFilter, "workspaceId">>({});
 const isLoadingHistory = ref(false);
-const sidebarView = ref<"servers" | "history">("servers");
+let historyLoadVersion = 0;
 const workspaceView = ref<"requests" | "serverConfiguration">("requests");
 const isCurlImportOpen = ref(false);
 const curlImportError = ref("");
@@ -50,7 +47,7 @@ const request = useOperationRequest({
   selectedServer: workspaceServers.selectedServer,
   selectedServerId: workspaceServers.selectedServerId,
   workspace: workspaceServers.workspace,
-  reloadHistory: () => loadHistory(true),
+  reloadHistory: loadHistory,
   setErrorMessage: (message) => {
     errorMessage.value = message;
   }
@@ -60,7 +57,7 @@ onMounted(async () => {
   try {
     await workspaceServers.loadInitialState();
     await request.loadDrafts();
-    await loadHistory(true);
+    await loadHistory();
   } finally {
     isInitializing.value = false;
   }
@@ -72,40 +69,33 @@ watch(workspaceServers.selectedServerId, () => {
   }
 });
 
-async function loadHistory(reset: boolean): Promise<void> {
+async function loadHistory(): Promise<void> {
   const tapir = getTapirBridge();
   const workspaceId = workspaceServers.workspace.value?.id;
-  if (!tapir || !workspaceId || isLoadingHistory.value) return;
+  const draft = request.activeDraft.value;
+  const version = ++historyLoadVersion;
+  if (!tapir || !workspaceId || !draft) {
+    history.value = [];
+    isLoadingHistory.value = false;
+    return;
+  }
   isLoadingHistory.value = true;
   try {
-    const page = await tapir.listHistory({ ...historyFilter.value, workspaceId, cursor: reset ? undefined : historyCursor.value ?? undefined, limit: 50 });
-    history.value = reset ? page.entries : [...history.value, ...page.entries];
-    historyCursor.value = page.nextCursor;
+    const scope = draft.sourceType === "openapi" && draft.serverInstanceId && draft.operationId
+      ? { serverId: draft.serverInstanceId, operationId: draft.operationId }
+      : { requestDraftId: draft.id };
+    const page = await tapir.listHistory({ workspaceId, ...scope, limit: 10 });
+    if (version === historyLoadVersion) {
+      history.value = page.entries.filter((entry) => draft.sourceType === "openapi"
+        ? entry.serverInstanceId === draft.serverInstanceId && entry.operationId === draft.operationId
+        : entry.requestDraftId === draft.id);
+    }
   } finally {
-    isLoadingHistory.value = false;
+    if (version === historyLoadVersion) isLoadingHistory.value = false;
   }
 }
 
-async function filterHistory(filter: Omit<HistoryFilter, "workspaceId">): Promise<void> {
-  historyFilter.value = filter;
-  await loadHistory(true);
-}
-
-async function deleteHistoryEntry(id: string): Promise<void> {
-  const tapir = getTapirBridge();
-  const workspaceId = workspaceServers.workspace.value?.id;
-  if (!tapir || !workspaceId) return;
-  await tapir.deleteHistoryEntry(workspaceId, id);
-  history.value = history.value.filter((entry) => entry.id !== id);
-}
-
-async function clearHistory(): Promise<void> {
-  const tapir = getTapirBridge();
-  const workspaceId = workspaceServers.workspace.value?.id;
-  if (!tapir || !workspaceId) return;
-  await tapir.clearHistory({ ...historyFilter.value, workspaceId });
-  await loadHistory(true);
-}
+watch(() => request.activeDraft.value?.id, () => { void loadHistory(); });
 
 async function selectOperation(operation: NormalizedOperation): Promise<void> {
   workspaceView.value = "requests";
@@ -236,7 +226,7 @@ async function serverDeleted(serverId: string): Promise<void> {
   workspaceServers.removeServer(serverId);
   workspaceView.value = "requests";
   await request.loadDrafts();
-  await loadHistory(true);
+  await loadHistory();
   workspaceServers.selectedOperationId.value = workspaceServers.operations.value[0]?.operationId ?? CUSTOM_OPERATION_ID;
   await nextTick();
   await request.ensureActiveSpaceHasDraft();
@@ -270,18 +260,9 @@ async function serverDeleted(serverId: string): Promise<void> {
     </div>
 
     <main v-else :class="['app-shell grid min-h-0 flex-1 text-[var(--tapir-text)]', isResizingLayout ? 'is-dragging' : 'transition-[grid-template-columns] duration-300 ease-out']" :style="shellStyle">
-      <aside :class="[panelClass, 'grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden']">
-        <div class="mb-4 grid grid-cols-2 gap-1 rounded-lg border border-[var(--tapir-border-control)] bg-[var(--tapir-bg-control)] p-1" aria-label="Sidebar view">
-          <button class="chrome-button justify-center" :class="sidebarView === 'servers' && 'is-active'" type="button" @click="sidebarView = 'servers'">
-            <ServerIcon :size="15" /> Servers
-          </button>
-          <button class="chrome-button justify-center" :class="sidebarView === 'history' && 'is-active'" type="button" @click="sidebarView = 'history'">
-            <HistoryIcon :size="15" /> History
-          </button>
-        </div>
-        <div class="min-h-0 overflow-x-hidden overflow-y-auto">
+      <aside :class="[panelClass, 'min-h-0 overflow-hidden']">
+        <div class="h-full min-h-0 overflow-x-hidden overflow-y-auto">
       <ServersPanel
-        v-if="sidebarView === 'servers'"
         :grouped-operations="workspaceServers.groupedOperations.value"
         :operations-count="workspaceServers.operations.value.length"
         :selected-operation-id="workspaceServers.selectedOperationId.value"
@@ -298,18 +279,6 @@ async function serverDeleted(serverId: string): Promise<void> {
         @select-custom="selectCustom"
         @select-sandbox="selectSandbox"
         @select-operation="selectOperation"
-      />
-      <HistoryPanel
-        v-else
-        :history="history"
-        :servers="workspaceServers.servers.value"
-        :has-more="Boolean(historyCursor)"
-        :is-loading="isLoadingHistory"
-        @filter-history="filterHistory"
-        @load-more="loadHistory(false)"
-        @delete-history="deleteHistoryEntry"
-        @clear-history="clearHistory"
-        @restore-history="request.restoreHistory"
       />
         </div>
       </aside>
@@ -383,9 +352,12 @@ async function serverDeleted(serverId: string): Promise<void> {
         <ResponsePanel
           v-if="workspaceView === 'requests'"
           :collapsed="collapsedPanels.response"
+          :history="history"
+          :is-loading-history="isLoadingHistory"
           :pretty-body="request.prettyBody.value"
           :response-view="request.responseView.value"
           @collapse="collapsedPanels.response = $event"
+          @restore-history="request.restoreHistory"
         />
       </section>
 

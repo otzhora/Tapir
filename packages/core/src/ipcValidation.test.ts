@@ -20,6 +20,26 @@ describe("IPC request validation", () => {
     })).toEqual({ serverId: "server-1", operationId: "listPets", values: { limit: "10" }, requestDraftId: undefined, body: undefined, contentType: undefined });
   });
 
+  it("accepts a request-draft history filter", () => {
+    expect(parseTapirIpcRequest("tapir:listHistory", {
+      workspaceId: "workspace-1",
+      requestDraftId: "draft-1",
+      limit: 10
+    })).toEqual({
+      workspaceId: "workspace-1",
+      requestDraftId: "draft-1",
+      limit: 10,
+      cursor: undefined,
+      serverId: undefined,
+      method: undefined,
+      status: undefined,
+      operationId: undefined,
+      search: undefined,
+      createdAfter: undefined,
+      createdBefore: undefined
+    });
+  });
+
   it("rejects renderer-supplied operation objects and malformed nested values", () => {
     expect(() => parseTapirIpcRequest("tapir:callOperation", {
       serverId: "server-1",

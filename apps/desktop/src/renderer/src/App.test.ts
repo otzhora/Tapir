@@ -73,10 +73,10 @@ describe("desktop renderer app", () => {
     await wrapper.findAll(".response-tab").find((tab) => tab.text().includes("Headers"))?.trigger("click");
     expect(wrapper.text()).toContain("content-type");
     expect(wrapper.text()).toContain("application/json");
-    await wrapper.findAll("button").find((button) => button.text().includes("History"))?.trigger("click");
+    await wrapper.find("button[aria-label='Request history']").trigger("click");
     await nextTick();
     expect(wrapper.text()).toContain("List pets");
-    await wrapper.find("[title='Restore request']").trigger("click");
+    await wrapper.find("button[title='Restore this run in the current tab']").trigger("click");
     await settle();
 
     expect(bridge.updateRequestDraft).toHaveBeenLastCalledWith({
@@ -177,17 +177,18 @@ describe("desktop renderer app", () => {
     const wrapper = mountApp();
     await settle();
 
-    expect(wrapper.findAll("button[aria-expanded='true']")).toHaveLength(2);
+    const operationGroups = () => wrapper.findAll("button[aria-expanded]:not([aria-haspopup])");
+    expect(operationGroups().filter((button) => button.attributes("aria-expanded") === "true")).toHaveLength(2);
     const collapseAll = wrapper.find("button[title='Collapse all schema sections']");
     expect(collapseAll.text()).toBe("Collapse all");
 
     await collapseAll.trigger("click");
-    expect(wrapper.findAll("button[aria-expanded='false']")).toHaveLength(2);
+    expect(operationGroups().filter((button) => button.attributes("aria-expanded") === "false")).toHaveLength(2);
     const expandAll = wrapper.find("button[title='Expand all schema sections']");
     expect(expandAll.text()).toBe("Expand all");
 
     await expandAll.trigger("click");
-    expect(wrapper.findAll("button[aria-expanded='true']")).toHaveLength(2);
+    expect(operationGroups().filter((button) => button.attributes("aria-expanded") === "true")).toHaveLength(2);
   });
 
   it("renders a production-scale operation catalog", async () => {
@@ -279,8 +280,10 @@ describe("desktop renderer app", () => {
     (Array.from(menu.querySelectorAll("button")).find((button) => button.textContent === "Close all tabs") as HTMLButtonElement).click();
     await settle();
 
-    expect(wrapper.findAll(".request-tab")).toHaveLength(0);
+    expect(wrapper.findAll(".request-tab")).toHaveLength(1);
+    expect(wrapper.find("input[aria-label='Request name']").exists()).toBe(true);
     expect(bridge.deleteRequestDraft).toHaveBeenCalledTimes(5);
+    expect(bridge.createRequestDraft).toHaveBeenCalledTimes(6);
   });
 
   it("duplicates and keyboard-renames requests from the labeled tab menu", async () => {
@@ -410,58 +413,41 @@ describe("desktop renderer app", () => {
     expect(bridge.createRequestDraft).not.toHaveBeenCalledWith(expect.objectContaining({ url: "https://unknown.example.test/status" }));
   });
 
-  it("filters and confirms deletion of workspace history", async () => {
+  it("shows a compact history scoped to the active request type", async () => {
+    const related = historyEntry(preparedOperation({ serverId: "server-1", operationId: "listPets", values: {}, requestDraftId: "draft-list-pets" }).request);
+    const unrelated = { ...related, id: "history-unrelated", operationId: "createPet", createdAt: "2026-07-02T00:00:00.000Z" };
+    vi.mocked(bridge.listHistory).mockResolvedValue({ entries: [related, unrelated], nextCursor: null });
     const wrapper = mountApp();
     await settle();
     await wrapper.findAll("button").find((button) => button.text().includes("Send"))?.trigger("click");
     await settle();
-    await wrapper.findAll("button").find((button) => button.text().includes("History"))?.trigger("click");
-    await wrapper.find("input[placeholder='Search URL or draft']").setValue("pets");
-    await wrapper.find("input[placeholder='Operation ID']").setValue("listPets");
-    await wrapper.findAll("button").find((button) => button.text().includes("Apply"))?.trigger("click");
-    await settle();
-    expect(bridge.listHistory).toHaveBeenLastCalledWith(expect.objectContaining({ workspaceId: "workspace-1", search: "pets", operationId: "listPets", limit: 50 }));
-
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    await wrapper.find("button[title='Delete history entry']").trigger("click");
-    expect(bridge.deleteHistoryEntry).not.toHaveBeenCalled();
-    confirm.mockReturnValue(true);
-    await wrapper.find("button[title='Delete history entry']").trigger("click");
-    await settle();
-    expect(bridge.deleteHistoryEntry).toHaveBeenCalledWith("workspace-1", "history-1");
+    await wrapper.find("button[aria-label='Request history']").trigger("click");
+    expect(bridge.listHistory).toHaveBeenLastCalledWith({ workspaceId: "workspace-1", serverId: "server-1", operationId: "listPets", limit: 10 });
+    expect(wrapper.findAll("time")).toHaveLength(1);
+    expect(wrapper.find("time").attributes("datetime")).toBe("2026-07-01T00:00:00.000Z");
+    expect(wrapper.text()).toContain("31 ms");
+    expect(wrapper.find("input[placeholder='Search URL or draft']").exists()).toBe(false);
+    expect(wrapper.find("button[title='Restore this run in the current tab']").exists()).toBe(true);
+    expect(wrapper.find("button[title='Restore this run in a new request tab']").exists()).toBe(true);
   });
 
-  it("restores standalone history and confirms clearing the filtered set", async () => {
-    const standalone = historyEntry({ method: "PATCH", url: "https://standalone.example.test/jobs/1", headers: { "x-trace": "safe" }, body: "{\"state\":\"ready\"}" }, null);
-    standalone.serverInstanceId = null;
-    standalone.operationId = null;
-    standalone.requestMethod = "PATCH";
-    standalone.requestUrl = "https://standalone.example.test/jobs/1";
-    standalone.draftName = "Standalone job";
-    standalone.requestSnapshotJson = JSON.stringify({ method: "PATCH", url: standalone.requestUrl, headers: { "x-trace": "safe" }, body: "{\"state\":\"ready\"}" });
-    vi.mocked(bridge.listHistory).mockResolvedValue({ entries: [standalone], nextCursor: null });
-
+  it("restores a historic run into a new request tab", async () => {
     const wrapper = mountApp();
     await settle();
-    await wrapper.findAll("button").find((button) => button.text().includes("History"))?.trigger("click");
-    await wrapper.find("[title='Restore request']").trigger("click");
+    await wrapper.findAll("button").find((button) => button.text().includes("Send"))?.trigger("click");
+    await settle();
+    await wrapper.find("button[aria-label='Request history']").trigger("click");
+    await wrapper.find("button[title='Restore this run in a new request tab']").trigger("click");
     await settle();
 
-    expect(bridge.createRequestDraft).toHaveBeenCalledWith(expect.objectContaining({
-      serverId: null,
-      sourceType: "custom",
-      url: "https://standalone.example.test/jobs/1"
-    }));
-    expect(wrapper.text()).toContain("Request Sandbox");
-    expect((wrapper.find("input[placeholder='https://api.example.com/resource']").element as HTMLInputElement).value).toBe("https://standalone.example.test/jobs/1");
-
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    await wrapper.findAll("button").find((button) => button.text().includes("Clear"))?.trigger("click");
-    expect(bridge.clearHistory).not.toHaveBeenCalled();
-    confirm.mockReturnValue(true);
-    await wrapper.findAll("button").find((button) => button.text().includes("Clear"))?.trigger("click");
-    await settle();
-    expect(bridge.clearHistory).toHaveBeenCalledWith({ workspaceId: "workspace-1" });
+    expect(bridge.createRequestDraft).toHaveBeenCalledTimes(2);
+    expect(bridge.updateRequestDraft).toHaveBeenLastCalledWith({
+      draft: expect.objectContaining({
+        id: "draft-list-pets-2",
+        parametersJson: expect.stringContaining("\"value\":\"10\"")
+      })
+    });
+    expect(wrapper.findAll("button.request-tab")).toHaveLength(2);
   });
 
   it("saves pending API key auth before Send, keeps IPC secret-free, and reloads only configured state", async () => {

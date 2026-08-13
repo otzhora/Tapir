@@ -267,6 +267,7 @@ export interface HistoryRepository {
 
 export interface HistoryFilter {
   workspaceId: string;
+  requestDraftId?: string;
   serverId?: string | null;
   method?: HttpMethod;
   status?: number;

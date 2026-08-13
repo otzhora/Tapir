@@ -123,15 +123,15 @@ async function exerciseFirstRun(window) {
   await window.getByRole("menuitem", { name: /Rename request/ }).click();
   await window.getByLabel("Request name").fill("Node API-key check copy");
 
-  await window.getByRole("button", { name: "History", exact: true }).click();
-  await window.locator("[title='Restore request']").first().click();
+  await window.locator(".request-tab").first().click();
+  await window.getByRole("button", { name: "Request history", exact: true }).click();
+  await window.locator("[title='Restore this run in the current tab']").first().click();
   await window.getByLabel("Request name").waitFor({ state: "visible" });
 
   await importCurl(window, `curl '${nodeBaseUrl}/health'`);
   await window.getByRole("button", { name: "Send", exact: true }).click();
   await window.getByText("tapir-node-adoption-api", { exact: false }).first().waitFor({ state: "visible" });
 
-  await window.getByRole("button", { name: "Servers", exact: true }).click();
   await addServer(window, dotnetBaseUrl, `${dotnetBaseUrl}/swagger/v1/swagger.json`);
   await window.getByText("Tapir .NET Logistics API", { exact: true }).first().waitFor({ state: "visible" });
   await window.getByLabel("Search operations").fill("GetHealth");
@@ -139,7 +139,6 @@ async function exerciseFirstRun(window) {
   await window.getByRole("button", { name: "Send", exact: true }).click();
   await window.getByText("tapir-dotnet-logistics-api", { exact: false }).first().waitFor({ state: "visible" });
 
-  await window.getByRole("button", { name: "Servers", exact: true }).click();
   const dotnetServerRow = window.getByTitle(/^Tapir \.NET Logistics API/).locator("..");
   await dotnetServerRow.getByTitle("Configure server").click();
   const nameInput = window.getByPlaceholder("Example API");
@@ -155,11 +154,10 @@ async function exerciseRestart(window) {
   const serverCount = window.getByTitle("Loaded servers");
   await serverCount.waitFor({ state: "visible" });
   assert.match(await serverCount.innerText(), /2/, "Both servers were not restored after restart.");
-  await window.getByRole("button", { name: "History", exact: true }).click();
-  assert((await window.locator("[title='Restore request']").count()) >= 3, "History did not persist across restart.");
-  await window.getByPlaceholder("Operation ID").fill("getApiKeyIdentity");
-  await window.getByRole("button", { name: /Apply/ }).click();
-  const restoredRequest = window.locator("[title='Restore request']").first();
+  await window.getByLabel("Search operations").fill("getApiKeyIdentity");
+  await window.getByRole("button", { name: /Verify an API key/ }).click();
+  await window.getByRole("button", { name: "Request history", exact: true }).click();
+  const restoredRequest = window.locator("[title='Restore this run in the current tab']").first();
   await restoredRequest.waitFor({ state: "visible" });
   await restoredRequest.click();
   await window.locator("button.tab-button").filter({ hasText: "Headers" }).click();

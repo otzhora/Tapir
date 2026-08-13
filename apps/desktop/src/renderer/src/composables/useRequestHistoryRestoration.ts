@@ -4,13 +4,12 @@ import { parseHeaders, parseRequestSnapshot, restoreRequestInputs } from "../his
 import { parseDraftParameters } from "../requestDraftModel";
 
 interface UseRequestHistoryRestorationInput {
+  activeDraft: ComputedRef<RequestDraft | null>;
   customOperationId: string;
   operations: ComputedRef<NormalizedOperation[]>;
   selectedOperationId: Ref<string | null>;
   selectedServerId: Ref<string | null>;
   selectedContentTypes: ComputedRef<string[]>;
-  drafts: Ref<RequestDraft[]>;
-  visibleDrafts: ComputedRef<RequestDraft[]>;
   createCustomRequest: (serverId: string | null, initialUrl?: string) => Promise<RequestDraft | null>;
   createOpenApiRequest: (operation: NormalizedOperation) => Promise<RequestDraft | null>;
   saveDraft: (draft: RequestDraft) => Promise<void>;
@@ -19,14 +18,15 @@ interface UseRequestHistoryRestorationInput {
 }
 
 export function useRequestHistoryRestoration(input: UseRequestHistoryRestorationInput) {
-  async function restoreHistory(entry: CallHistoryEntry): Promise<void> {
+  async function restoreHistory(entry: CallHistoryEntry, target: "current" | "new" = "current"): Promise<void> {
     if (!entry.operationId) {
       const request = parseRequestSnapshot(entry.requestSnapshotJson);
       input.selectedServerId.value = entry.serverInstanceId;
       input.selectedOperationId.value = input.customOperationId;
       await nextTick();
-      const existing = entry.requestDraftId ? input.drafts.value.find((candidate) => candidate.id === entry.requestDraftId) ?? null : null;
-      const draft = existing ?? await input.createCustomRequest(entry.serverInstanceId, request.url);
+      const draft = target === "current"
+        ? input.activeDraft.value
+        : await input.createCustomRequest(entry.serverInstanceId, request.url);
       if (!draft) return;
       input.selectDraft(draft.id);
       await nextTick();
@@ -47,8 +47,9 @@ export function useRequestHistoryRestoration(input: UseRequestHistoryRestoration
     if (!operation) return;
     input.selectedOperationId.value = operation.operationId;
     await nextTick();
-    const matched = entry.requestDraftId ? input.visibleDrafts.value.find((candidate) => candidate.id === entry.requestDraftId) ?? null : null;
-    const draft = matched ?? input.visibleDrafts.value[0] ?? await input.createOpenApiRequest(operation);
+    const draft = target === "current"
+      ? input.activeDraft.value
+      : await input.createOpenApiRequest(operation);
     if (!draft) return;
     input.selectDraft(draft.id);
     input.setResponse(draft.id, historyResponse(entry));
