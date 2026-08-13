@@ -51,7 +51,7 @@ export class TapirAppUpdater {
     try {
       await this.updater.checkForUpdates();
     } catch (error) {
-      this.fail(error);
+      this.fail(error, "Update check failed");
     }
     return this.getState();
   }
@@ -62,7 +62,7 @@ export class TapirAppUpdater {
     try {
       await this.updater.downloadUpdate();
     } catch (error) {
-      this.fail(error);
+      this.fail(error, "Update download failed");
     }
     return this.getState();
   }
@@ -77,12 +77,12 @@ export class TapirAppUpdater {
     this.updater.on("update-available", (info) => this.setState({ status: "available", availableVersion: info.version, message: `Tapir ${info.version} is available.`, downloadPercent: undefined }));
     this.updater.on("download-progress", (progress) => this.setState({ status: "downloading", downloadPercent: Math.max(0, Math.min(100, progress.percent)), message: `Downloading update… ${Math.round(progress.percent)}%` }));
     this.updater.on("update-downloaded", (info) => this.setState({ status: "downloaded", availableVersion: info.version, downloadPercent: 100, message: "Update downloaded. Restart Tapir to install it." }));
-    this.updater.on("error", (error) => this.fail(error));
+    this.updater.on("error", (error) => this.fail(error, this.state.status === "downloading" ? "Update download failed" : "Update check failed"));
   }
 
-  private fail(error: unknown): void {
+  private fail(error: unknown, summary: string): void {
     const detail = error instanceof Error ? error.message : String(error);
-    this.setState({ status: "error", message: `Update check failed: ${detail}`, downloadPercent: undefined });
+    this.setState({ status: "error", message: `${summary}: ${detail}`, downloadPercent: undefined });
   }
 
   private setState(changes: Partial<AppUpdateState>): void {

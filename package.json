@@ -1,6 +1,6 @@
 {
   "name": "tapir",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A local-first Windows API workspace for OpenAPI-driven requests.",
   "author": "Tapir contributors",
   "repository": "github:otzhora/Tapir",

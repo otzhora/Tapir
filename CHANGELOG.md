@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.3 — 2026-08-14
+
+- Keep the update panel visible above the workspace and open it automatically during downloads.
+- Show live download progress plus distinct available, ready-to-install, and failure states.
+
 ## 0.0.2 — 2026-08-14
 
 - Embed Tapir's Windows icon into the executable and use it for the taskbar window identity.

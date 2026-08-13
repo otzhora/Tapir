@@ -52,7 +52,7 @@ describe("desktop renderer app", () => {
     const wrapper = mountApp();
     await settle();
 
-    expect(wrapper.find("button[aria-label='App updates']").exists()).toBe(false);
+    expect(wrapper.find("button[aria-label='Update available']").exists()).toBe(false);
   });
 
   it("shows an available GitHub release and starts its download", async () => {
@@ -65,12 +65,30 @@ describe("desktop renderer app", () => {
     const wrapper = mountApp();
     await settle();
 
-    await wrapper.find("button[aria-label='App updates']").trigger("click");
+    await wrapper.find("button[aria-label='Update available']").trigger("click");
     expect(wrapper.text()).toContain("Current version 0.0.1-20260813");
     expect(wrapper.text()).toContain("Tapir 0.0.2-20260814 is available.");
     await wrapper.findAll("button").find((button) => button.text().includes("Download"))?.trigger("click");
 
     expect(bridge.downloadUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("keeps live download progress visible above the workspace", async () => {
+    vi.mocked(bridge.getUpdateState).mockResolvedValueOnce({
+      currentVersion: "0.0.1-20260813",
+      availableVersion: "0.0.2-20260814",
+      status: "downloading",
+      downloadPercent: 42.4,
+      message: "Downloading update... 42%"
+    });
+    const wrapper = mountApp();
+    await settle();
+
+    expect(wrapper.find("header").classes()).toContain("z-50");
+    expect(wrapper.find("button[aria-label='Downloading update 42%']").exists()).toBe(true);
+    expect(wrapper.find("section[aria-label='Tapir updates']").exists()).toBe(true);
+    expect(wrapper.text()).toContain("Downloading update 42%");
+    expect(wrapper.text()).toContain("42%");
   });
 
   it("loads a server, previews an operation, sends it, and restores it from history", async () => {
@@ -691,7 +709,7 @@ function createMockBridge(): MockTapirBridge {
     closeWindow: vi.fn(),
     getUpdateState: vi.fn(async () => ({ currentVersion: "0.0.1-20260814", status: "idle" as const })),
     checkForUpdates: vi.fn(async () => ({ currentVersion: "0.0.1-20260814", status: "up-to-date" as const })),
-    downloadUpdate: vi.fn(async () => ({ currentVersion: "0.0.1-20260814", status: "downloaded" as const })),
+    downloadUpdate: vi.fn(async () => ({ currentVersion: "0.0.1-20260814", availableVersion: "0.0.2-20260814", status: "downloaded" as const })),
     installUpdate: vi.fn(async () => undefined),
     onUpdateState: vi.fn(() => () => undefined),
     getInitialState: vi.fn(async () => ({ workspace, servers: [{ ...serverWithDefinition, authentication: state.authentication }] })),
