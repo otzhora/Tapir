@@ -137,6 +137,38 @@ describe("desktop renderer app", () => {
     expect(wrapper.text()).toContain("List pets");
   });
 
+  it("searches operations across servers and opens a result in its server", async () => {
+    const remoteOperation: NormalizedOperation = {
+      ...listPetsOperation,
+      operationId: "remoteHealth",
+      sourceOperationId: "remoteHealth",
+      path: "/remote/health",
+      summary: "Remote health check",
+      tags: ["Diagnostics"]
+    };
+    vi.mocked(bridge.getInitialState).mockResolvedValue({
+      workspace,
+      servers: [serverWithDefinition, {
+        ...serverWithDefinition,
+        server: { ...serverWithDefinition.server, id: "server-2", name: "Remote API", baseUrl: "https://remote.example.test" },
+        definition: { ...serverWithDefinition.definition!, name: "Remote API", operations: [remoteOperation] }
+      }]
+    });
+    const wrapper = mountApp();
+    await settle();
+
+    await wrapper.find("input[aria-label='Search operations']").setValue("remoteHealth");
+    expect(wrapper.text()).toContain("1 of 3 operations across 2 servers");
+    expect(wrapper.text()).toContain("Remote API");
+    await wrapper.findAll("button").find((button) => button.text().includes("Remote health check"))?.trigger("click");
+    await settle();
+
+    expect(bridge.previewOperation).toHaveBeenLastCalledWith(expect.objectContaining({
+      serverId: "server-2",
+      operationId: "remoteHealth"
+    }));
+  });
+
   it("adds a server with an explicit OpenAPI document URL", async () => {
     vi.mocked(bridge.addServer).mockResolvedValue({
       server: {
@@ -151,6 +183,7 @@ describe("desktop renderer app", () => {
     const wrapper = mountApp();
     await settle();
 
+    await wrapper.find("button[aria-label='Add server']").trigger("click");
     await wrapper.find("#base-url").setValue("https://api.example.test/v3");
     await wrapper.find("#spec-url").setValue("https://docs.example.test/openapi.json");
     wrapper.find("#base-url").element.closest("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
@@ -179,13 +212,17 @@ describe("desktop renderer app", () => {
 
     const operationGroups = () => wrapper.findAll("button[aria-expanded]:not([aria-haspopup])");
     expect(operationGroups().filter((button) => button.attributes("aria-expanded") === "true")).toHaveLength(2);
-    const collapseAll = wrapper.find("button[title='Collapse all schema sections']");
-    expect(collapseAll.text()).toBe("Collapse all");
+    await wrapper.find("button[aria-label='More sidebar actions']").trigger("click");
+    const collapseAll = wrapper.findAll("[role='menuitem']").find((button) => button.text().includes("Collapse operation groups"));
+    expect(collapseAll).toBeDefined();
+    if (!collapseAll) return;
 
     await collapseAll.trigger("click");
     expect(operationGroups().filter((button) => button.attributes("aria-expanded") === "false")).toHaveLength(2);
-    const expandAll = wrapper.find("button[title='Expand all schema sections']");
-    expect(expandAll.text()).toBe("Expand all");
+    await wrapper.find("button[aria-label='More sidebar actions']").trigger("click");
+    const expandAll = wrapper.findAll("[role='menuitem']").find((button) => button.text().includes("Expand operation groups"));
+    expect(expandAll).toBeDefined();
+    if (!expandAll) return;
 
     await expandAll.trigger("click");
     expect(operationGroups().filter((button) => button.attributes("aria-expanded") === "true")).toHaveLength(2);
@@ -321,7 +358,7 @@ describe("desktop renderer app", () => {
     const wrapper = mountApp();
     await settle();
 
-    await wrapper.findAll("button").find((button) => button.text().includes("Import cURL"))?.trigger("click");
+    await wrapper.find("button[aria-label='Import cURL']").trigger("click");
     await nextTick();
     await wrapper.find("textarea[aria-label='Browser cURL']").setValue("curl 'https://dev.example.test/api/orders?expand=items' -H 'content-type: application/json' -H 'authorization: Bearer secret' --data-raw '{\"name\":\"Momo\"}'");
     await nextTick();
@@ -350,7 +387,7 @@ describe("desktop renderer app", () => {
     const wrapper = mountApp();
     await settle();
 
-    await wrapper.findAll("button").find((button) => button.text().includes("Import cURL"))?.trigger("click");
+    await wrapper.find("button[aria-label='Import cURL']").trigger("click");
     await nextTick();
     await wrapper.find("textarea[aria-label='Browser cURL']").setValue("curl 'https://api.example.test/undocumented/status'");
     await wrapper.findAll("button").find((button) => button.text() === "Keep original URL")?.trigger("click");
@@ -374,7 +411,7 @@ describe("desktop renderer app", () => {
     const wrapper = mountApp();
     await settle();
 
-    await wrapper.findAll("button").find((button) => button.text().includes("Import cURL"))?.trigger("click");
+    await wrapper.find("button[aria-label='Import cURL']").trigger("click");
     await nextTick();
     await wrapper.find("textarea[aria-label='Browser cURL']").setValue("curl 'https://dev.example.test/api/orders'");
     await wrapper.findAll("button").find((button) => button.text() === "Keep original URL")?.trigger("click");
@@ -398,7 +435,7 @@ describe("desktop renderer app", () => {
     const wrapper = mountApp();
     await settle();
 
-    await wrapper.findAll("button").find((button) => button.text().includes("Import cURL"))?.trigger("click");
+    await wrapper.find("button[aria-label='Import cURL']").trigger("click");
     await nextTick();
     await wrapper.find("textarea[aria-label='Browser cURL']").setValue("curl 'https://unknown.example.test/status'");
     await wrapper.findAll("button").find((button) => button.text() === "Keep original URL")?.trigger("click");
@@ -677,7 +714,7 @@ function openApiDraft(input?: Partial<CreateRequestDraftRequest>): RequestDraft 
   return {
     id: "draft-list-pets",
     workspaceId: "workspace-1",
-    serverInstanceId: "server-1",
+    serverInstanceId: input?.serverId ?? "server-1",
     sourceType: "openapi",
     operationId: input?.operationId ?? "listPets",
     deprecatedAt: null,

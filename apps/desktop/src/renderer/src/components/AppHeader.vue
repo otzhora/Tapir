@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Activity, ClipboardPaste, Server, Sparkles } from "lucide-vue-next";
+import { Activity, Server, Sparkles } from "lucide-vue-next";
 import type { ServerWithDefinition, Workspace } from "@tapir/core";
 
 defineProps<{
@@ -7,10 +7,6 @@ defineProps<{
   selectedServer: ServerWithDefinition | null;
   serversCount: number;
   workspace: Workspace | null;
-}>();
-
-const emit = defineEmits<{
-  importCurl: [];
 }>();
 
 </script>
@@ -31,10 +27,6 @@ const emit = defineEmits<{
     </div>
 
     <div class="mr-[138px] flex items-center justify-end gap-2 px-3">
-      <button class="chrome-button" type="button" title="Import a browser cURL request" @click="emit('importCurl')">
-        <ClipboardPaste :size="14" />
-        Import cURL
-      </button>
       <span class="status-pill" title="Loaded servers">
         <Server :size="13" />
         {{ serversCount }}

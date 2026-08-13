@@ -8,6 +8,7 @@ import ResponsePanel from "./components/ResponsePanel.vue";
 import ServerConfiguration from "./components/ServerConfiguration.vue";
 import ServersPanel from "./components/ServersPanel.vue";
 import CurlImportDialog from "./components/CurlImportDialog.vue";
+import AddServerDialog from "./components/AddServerDialog.vue";
 import type { CurlImportDraft } from "./curlImport";
 import { CUSTOM_OPERATION_ID, useOperationRequest } from "./composables/useOperationRequest";
 import { useResizablePanels } from "./composables/useResizablePanels";
@@ -21,6 +22,7 @@ const isLoadingHistory = ref(false);
 let historyLoadVersion = 0;
 const workspaceView = ref<"requests" | "serverConfiguration">("requests");
 const isCurlImportOpen = ref(false);
+const isAddServerOpen = ref(false);
 const curlImportError = ref("");
 const isCurlImporting = ref(false);
 const isInitializing = ref(true);
@@ -97,15 +99,23 @@ async function loadHistory(): Promise<void> {
 
 watch(() => request.activeDraft.value?.id, () => { void loadHistory(); });
 
-async function selectOperation(operation: NormalizedOperation): Promise<void> {
+async function selectOperation(operation: NormalizedOperation, serverId?: string): Promise<void> {
   workspaceView.value = "requests";
+  if (serverId && serverId !== workspaceServers.selectedServerId.value) {
+    workspaceServers.selectedServerId.value = serverId;
+    await nextTick();
+  }
   workspaceServers.selectOperation(operation);
   await nextTick();
   await request.ensureActiveSpaceHasDraft();
 }
 
-async function addOperationRequest(operation: NormalizedOperation): Promise<void> {
+async function addOperationRequest(operation: NormalizedOperation, serverId?: string): Promise<void> {
   workspaceView.value = "requests";
+  if (serverId && serverId !== workspaceServers.selectedServerId.value) {
+    workspaceServers.selectedServerId.value = serverId;
+    await nextTick();
+  }
   workspaceServers.selectOperation(operation);
   await request.createOpenApiRequest(operation);
 }
@@ -171,6 +181,12 @@ function selectServer(serverId: string): void {
   workspaceView.value = "requests";
   workspaceServers.selectedServerId.value = serverId;
   workspaceServers.selectedOperationId.value = workspaceServers.operations.value[0]?.operationId ?? CUSTOM_OPERATION_ID;
+}
+
+function addServer(server: ServerWithDefinition): void {
+  workspaceServers.addServer(server);
+  isAddServerOpen.value = false;
+  selectServer(server.server.id);
 }
 
 async function saveAuthentication(input: Omit<SaveAuthenticationRequest, "serverId">): Promise<void> {
@@ -241,7 +257,6 @@ async function serverDeleted(serverId: string): Promise<void> {
       :selected-server="workspaceServers.selectedServer.value"
       :servers-count="workspaceServers.servers.value.length"
       :workspace="workspaceServers.workspace.value"
-      @import-curl="curlImportError = ''; isCurlImportOpen = true"
     />
 
     <CurlImportDialog
@@ -253,6 +268,8 @@ async function serverDeleted(serverId: string): Promise<void> {
       @cancel="isCurlImportOpen = false"
       @import="importCurl"
     />
+
+    <AddServerDialog v-if="isAddServerOpen" @added="addServer" @cancel="isAddServerOpen = false" />
 
     <div v-if="isInitializing" class="empty-state min-h-0 flex-1" role="status">
       <LoaderCircle :size="28" class="animate-spin" />
@@ -268,13 +285,13 @@ async function serverDeleted(serverId: string): Promise<void> {
         :selected-operation-id="workspaceServers.selectedOperationId.value"
         :selected-server-id="workspaceServers.selectedServerId.value"
         :servers="workspaceServers.servers.value"
-        :workspace="workspaceServers.workspace.value"
         @add-custom-request="addCustomRequest"
         @add-sandbox-request="addSandboxRequest"
+        @add-server="isAddServerOpen = true"
         @add-operation-request="addOperationRequest"
-        @server-added="workspaceServers.addServer"
         @server-refreshed="serverRefreshed"
         @configure-server="configureServer"
+        @import-curl="curlImportError = ''; isCurlImportOpen = true"
         @select-server="selectServer"
         @select-custom="selectCustom"
         @select-sandbox="selectSandbox"
