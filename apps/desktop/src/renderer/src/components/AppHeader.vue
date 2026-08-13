@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { CheckCircle2, Download, LoaderCircle, Minus, RefreshCw, RotateCcw, Square, X } from "lucide-vue-next";
+import { Download, LoaderCircle, Minus, RotateCcw, Square, X } from "lucide-vue-next";
 import type { ServerWithDefinition, Workspace } from "@tapir/core";
 import type { AppUpdateState } from "@tapir/core";
 
@@ -18,7 +18,7 @@ const updateState = ref<AppUpdateState>({ currentVersion: "", status: "disabled"
 let removeUpdateListener: (() => void) | undefined;
 
 const isUpdateBusy = computed(() => updateState.value.status === "checking" || updateState.value.status === "downloading");
-const hasUpdateAttention = computed(() => updateState.value.status === "available" || updateState.value.status === "downloaded" || updateState.value.status === "error");
+const showUpdateButton = computed(() => Boolean(updateState.value.availableVersion) && ["available", "downloading", "downloaded", "error"].includes(updateState.value.status));
 
 onMounted(async () => {
   const tapir = window.tapir;
@@ -28,11 +28,6 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => removeUpdateListener?.());
-
-async function checkForUpdates(): Promise<void> {
-  const state = await window.tapir?.checkForUpdates();
-  if (state) updateState.value = state;
-}
 
 async function downloadUpdate(): Promise<void> {
   const state = await window.tapir?.downloadUpdate();
@@ -53,10 +48,9 @@ function installUpdate(): void {
       <span class="hidden truncate text-[var(--tapir-text-subtle)] lg:inline">{{ selectedServer?.server.baseUrl ?? "Add an OpenAPI server to begin" }}</span>
     </div>
     <div class="flex h-11 items-center justify-end">
-      <div class="relative grid h-11 w-[46px] place-items-center">
+      <div v-if="showUpdateButton" class="relative grid h-11 w-[46px] place-items-center">
         <button
-          class="update-titlebar-button relative grid size-9 place-items-center rounded-md text-[var(--tapir-text-muted)] transition hover:bg-[var(--tapir-bg-control-active)] hover:text-[var(--tapir-text-strong)]"
-          :class="{ 'text-[var(--tapir-accent)]': hasUpdateAttention }"
+          class="update-titlebar-button relative grid size-9 place-items-center rounded-md text-[var(--tapir-accent)] transition hover:bg-[var(--tapir-bg-control-active)] hover:text-[var(--tapir-text-strong)]"
           type="button"
           aria-label="App updates"
           title="App updates"
@@ -64,7 +58,7 @@ function installUpdate(): void {
         >
           <LoaderCircle v-if="isUpdateBusy" :size="17" class="animate-spin" />
           <Download v-else :size="17" />
-          <span v-if="hasUpdateAttention" class="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-[var(--tapir-accent)]"></span>
+          <span class="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-[var(--tapir-accent)]"></span>
         </button>
 
         <section v-if="isUpdateMenuOpen" class="update-popover absolute right-0 top-[42px] z-50 w-[320px] rounded-lg border border-[var(--tapir-border-strong)] bg-[var(--tapir-bg-panel-opaque)] p-4 shadow-2xl" aria-label="Tapir updates">
@@ -73,16 +67,14 @@ function installUpdate(): void {
               <strong class="block text-[14px] text-[var(--tapir-text-strong)]">Tapir updates</strong>
               <span class="text-[11px] text-[var(--tapir-text-subtle)]">Current version {{ updateState.currentVersion || "development" }}</span>
             </div>
-            <CheckCircle2 v-if="updateState.status === 'up-to-date'" :size="18" class="text-[var(--tapir-success)]" />
           </div>
-          <p class="m-0 text-[12px] leading-5 text-[var(--tapir-text-muted)]">{{ updateState.message || "Check GitHub Releases for a newer Tapir alpha." }}</p>
+          <p class="m-0 text-[12px] leading-5 text-[var(--tapir-text-muted)]">{{ updateState.message || "A newer Tapir release is available." }}</p>
           <div v-if="updateState.status === 'downloading'" class="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--tapir-bg-control)]">
             <div class="h-full rounded-full bg-[var(--tapir-accent)] transition-[width]" :style="{ width: `${updateState.downloadPercent ?? 0}%` }"></div>
           </div>
           <div class="mt-4 flex justify-end gap-2">
-            <button v-if="updateState.status === 'available'" class="chrome-button is-active" type="button" @click="downloadUpdate"><Download :size="14" />Download</button>
+            <button v-if="updateState.status === 'available' || updateState.status === 'error'" class="chrome-button is-active" type="button" @click="downloadUpdate"><Download :size="14" />{{ updateState.status === 'error' ? 'Retry download' : 'Download' }}</button>
             <button v-else-if="updateState.status === 'downloaded'" class="chrome-button is-active" type="button" @click="installUpdate"><RotateCcw :size="14" />Restart &amp; install</button>
-            <button v-else class="chrome-button" type="button" :disabled="isUpdateBusy || updateState.status === 'disabled'" @click="checkForUpdates"><RefreshCw :size="14" />Check now</button>
           </div>
         </section>
       </div>

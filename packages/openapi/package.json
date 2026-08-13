@@ -1,6 +1,6 @@
 {
   "name": "@tapir/openapi",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "type": "module",
   "main": "dist/packages/openapi/src/index.js",
@@ -11,7 +11,7 @@
     "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tapir/core": "0.0.1"
+    "@tapir/core": "0.0.2"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

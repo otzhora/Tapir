@@ -5,7 +5,7 @@ directories:
   output: artifacts/installer
   buildResources: apps/desktop/build
 win:
-  icon: apps/desktop/build/icon.png
+  icon: apps/desktop/build/icon.ico
   target:
     - target: nsis
       arch:

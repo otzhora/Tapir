@@ -13,6 +13,7 @@ const version = await resolveReleaseVersion();
 if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
   throw new Error(`The root package.json has an invalid release version: ${String(version)}`);
 }
+const windowsVersion = `${version.split(/[-+]/, 1)[0]}.0`;
 const packageName = `Tapir-${version}-win32-x64`;
 const outputDir = join(artifactsDir, packageName);
 const zipPath = join(artifactsDir, `${packageName}.zip`);
@@ -58,6 +59,27 @@ try {
   ].join("\r\n"), "utf8");
   await rm(join(outputDir, "Tapir.exe"), { force: true });
   await rename(join(outputDir, "electron.exe"), join(outputDir, "Tapir.exe"));
+  run(join(root, "node_modules", "electron-winstaller", "vendor", "rcedit.exe"), [
+    "Tapir.exe",
+    "--set-icon",
+    join("resources", "app", "build", "icon.ico"),
+    "--set-version-string",
+    "ProductName",
+    "Tapir",
+    "--set-version-string",
+    "FileDescription",
+    "Tapir",
+    "--set-version-string",
+    "InternalName",
+    "Tapir",
+    "--set-version-string",
+    "OriginalFilename",
+    "Tapir.exe",
+    "--set-product-version",
+    windowsVersion,
+    "--set-file-version",
+    windowsVersion
+  ], outputDir);
 
   run("tar.exe", ["-a", "-c", "-f", zipPath, "-C", artifactsDir, packageName]);
   const sha256 = createHash("sha256").update(await readFile(zipPath)).digest("hex");
@@ -92,8 +114,8 @@ function runNpm(args) {
   run(command.command, command.args);
 }
 
-function run(command, args) {
-  const result = spawnSync(command, args, { cwd: root, encoding: "utf8", shell: false, windowsHide: true });
+function run(command, args, cwd = root) {
+  const result = spawnSync(command, args, { cwd, encoding: "utf8", shell: false, windowsHide: true });
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
   if (output) {
     process.stdout.write(output);

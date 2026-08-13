@@ -24,6 +24,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const discovery = new FetchOpenApiDiscoveryService();
 const normalizer = new BasicOpenApiNormalizer();
 
+if (process.platform === "win32") app.setAppUserModelId("io.github.otzhora.tapir");
+
 if (process.env.TAPIR_E2E_USER_DATA) {
   app.setPath("userData", process.env.TAPIR_E2E_USER_DATA);
 }
@@ -87,7 +89,7 @@ async function createWindow(show = true, closeToTray = true): Promise<BrowserWin
     title: "Tapir",
     autoHideMenuBar: true,
     frame: false,
-    icon: appIconPath(),
+    icon: appIconPath(false),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
       sandbox: true,
@@ -124,7 +126,7 @@ async function createWindow(show = true, closeToTray = true): Promise<BrowserWin
 }
 
 function appIconPath(trayIcon = false): string {
-  return join(app.getAppPath(), "build", trayIcon ? "tray-icon.png" : "icon.png");
+  return join(app.getAppPath(), "build", trayIcon ? "tray-icon.png" : process.platform === "win32" ? "icon.ico" : "icon.png");
 }
 
 function showMainWindow(): void {
@@ -173,7 +175,7 @@ async function bootstrap(): Promise<void> {
     registerIpc();
     createTray();
     mainWindow = await createWindow();
-    setTimeout(() => { void updates.check(); }, 2_000);
+    void updates.check();
     app.on("activate", () => {
       showMainWindow();
     });

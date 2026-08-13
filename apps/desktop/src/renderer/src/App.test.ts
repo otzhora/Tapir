@@ -48,15 +48,29 @@ describe("desktop renderer app", () => {
     expect(bridge.closeWindow).toHaveBeenCalledOnce();
   });
 
-  it("checks GitHub Releases from the title-bar update center", async () => {
+  it("hides updates until GitHub reports a newer release", async () => {
+    const wrapper = mountApp();
+    await settle();
+
+    expect(wrapper.find("button[aria-label='App updates']").exists()).toBe(false);
+  });
+
+  it("shows an available GitHub release and starts its download", async () => {
+    vi.mocked(bridge.getUpdateState).mockResolvedValueOnce({
+      currentVersion: "0.0.1-20260813",
+      availableVersion: "0.0.2-20260814",
+      status: "available",
+      message: "Tapir 0.0.2-20260814 is available."
+    });
     const wrapper = mountApp();
     await settle();
 
     await wrapper.find("button[aria-label='App updates']").trigger("click");
-    expect(wrapper.text()).toContain("Current version 0.0.1-20260814");
-    await wrapper.findAll("button").find((button) => button.text().includes("Check now"))?.trigger("click");
+    expect(wrapper.text()).toContain("Current version 0.0.1-20260813");
+    expect(wrapper.text()).toContain("Tapir 0.0.2-20260814 is available.");
+    await wrapper.findAll("button").find((button) => button.text().includes("Download"))?.trigger("click");
 
-    expect(bridge.checkForUpdates).toHaveBeenCalledOnce();
+    expect(bridge.downloadUpdate).toHaveBeenCalledOnce();
   });
 
   it("loads a server, previews an operation, sends it, and restores it from history", async () => {

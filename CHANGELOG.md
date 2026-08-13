@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.2 — 2026-08-14
+
+- Embed Tapir's Windows icon into the executable and use it for the taskbar window identity.
+- Check GitHub Releases automatically and show the update control only when a newer version is available.
+
 ## 0.0.1 — 2026-08-14
 
 Tapir's first dated release is a local-first Windows API workspace focused on OpenAPI-bound request work.
